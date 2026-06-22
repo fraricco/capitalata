@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Capitalata - Quiz delle Capitali</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .app {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
+    padding: 32px;
+    width: 100%;
+    max-width: 760px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+  h1 { text-align: center; margin-bottom: 8px; font-size: 2.4rem; }
+  .subtitle { text-align: center; opacity: 0.8; margin-bottom: 24px; }
+  .author {
+    text-align: center;
+    font-size: 0.95rem;
+    padding: 10px 14px;
+    background: rgba(255, 215, 0, 0.12);
+    border: 1px solid rgba(255, 215, 0, 0.35);
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+  .author strong { color: #ffd700; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  label { display: block; margin: 14px 0 6px; font-weight: 600; }
+  .hint { font-size: 0.85rem; opacity: 0.75; margin-top: 4px; font-weight: 400; }
+  input[type="number"], input[type="text"], select {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 1rem;
+  }
+  select option { background: #1e3c72; color: #fff; }
+  input::placeholder { color: rgba(255, 255, 255, 0.5); }
+  button {
+    background: #ffb347;
+    color: #1e3c72;
+    border: none;
+    padding: 14px 24px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 16px;
+    transition: transform 0.1s, background 0.2s;
+    width: 100%;
+  }
+  button:hover:not(:disabled) { background: #ffc46b; transform: translateY(-2px); }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  .player-inputs { display: grid; gap: 10px; margin-top: 12px; }
+  .difficulty {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .diff-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: #fff;
+    padding: 12px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    margin: 0;
+    width: 100%;
+    text-align: center;
+  }
+  .diff-btn .desc { display: block; font-size: 0.78rem; opacity: 0.8; margin-top: 4px; font-weight: 400; }
+  .diff-btn.selected {
+    background: #ffb347;
+    color: #1e3c72;
+    border-color: #ffb347;
+  }
+  .turn-banner {
+    background: rgba(255, 179, 71, 0.2);
+    border-left: 4px solid #ffb347;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 1.1rem;
+  }
+  .question {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin-bottom: 24px;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .options { display: grid; gap: 12px; }
+  .option {
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    text-align: left;
+    padding: 14px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin: 0;
+    width: 100%;
+    font-weight: 500;
+  }
+  .option:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: #ffb347;
+  }
+  .option.selected {
+    background: rgba(255, 179, 71, 0.35);
+    border-color: #ffb347;
+  }
+  .feedback {
+    text-align: center;
+    margin-top: 18px;
+    font-size: 1rem;
+    min-height: 24px;
+    opacity: 0.85;
+  }
+  .scoreboard {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+  }
+  .scoreboard h3 { margin-bottom: 8px; font-size: 1rem; opacity: 0.9; }
+  .score-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 0.95rem;
+  }
+  .score-row.active { color: #ffb347; font-weight: 700; }
+  .progress {
+    text-align: center;
+    margin-bottom: 16px;
+    opacity: 0.85;
+    font-size: 0.95rem;
+  }
+  .ranking { list-style: none; padding: 0; margin-bottom: 24px; }
+  .ranking li {
+    display: flex;
+    justify-content: space-between;
+    padding: 14px 18px;
+    margin-bottom: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    font-size: 1.1rem;
+  }
+  .ranking li:first-child {
+    background: linear-gradient(90deg, rgba(255,215,0,0.3), rgba(255,179,71,0.2));
+    border: 2px solid #ffd700;
+    font-weight: 700;
+    font-size: 1.25rem;
+  }
+  .winner-banner {
+    text-align: center;
+    font-size: 1.6rem;
+    margin-bottom: 20px;
+    color: #ffd700;
+  }
+  .recap-section h3 {
+    margin: 20px 0 12px;
+    font-size: 1.1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+    padding-bottom: 6px;
+  }
+  .recap-item {
+    background: rgba(0, 0, 0, 0.2);
+    border-left: 4px solid #888;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    font-size: 0.95rem;
+  }
+  .recap-item.correct { border-left-color: #2ecc71; }
+  .recap-item.wrong { border-left-color: #e74c3c; }
+  .recap-item .q { font-weight: 600; margin-bottom: 4px; }
+  .recap-item .ans { opacity: 0.9; font-size: 0.9rem; }
+  .recap-item .ans .ok { color: #7fe3a4; }
+  .recap-item .ans .ko { color: #f5a39c; text-decoration: line-through; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Capitalata</h1>
+  <p class="subtitle">Il quiz multiplayer sulle capitali del mondo</p>
+
+  <!-- Setup Screen -->
+  <div id="setup" class="screen active">
+    <p class="author">Un gioco creato da <strong>Paolo</strong></p>
+    <label for="numPlayers">Numero di giocatori (2-6)</label>
+    <input type="number" id="numPlayers" min="2" max="6" value="2" />
+
+    <label>Livello di difficoltà</label>
+    <div class="difficulty" id="difficulty">
+      <button class="diff-btn selected" data-level="1">Facile<span class="desc">Capitali UE e potenze mondiali</span></button>
+      <button class="diff-btn" data-level="2">Medio<span class="desc">Tutta Europa + grandi paesi extra-UE</span></button>
+      <button class="diff-btn" data-level="3">Difficile<span class="desc">Tutto il mondo, anche micro-stati</span></button>
+    </div>
+
+    <label for="numQuestions">Numero di domande per giocatore</label>
+    <select id="numQuestions">
+      <option value="5">5</option>
+      <option value="10" selected>10</option>
+      <option value="15">15</option>
+      <option value="20">20</option>
+    </select>
+    <div class="hint" id="poolHint"></div>
+
+    <button id="confirmCount">Continua</button>
+  </div>
+
+  <!-- Names Screen -->
+  <div id="names" class="screen">
+    <p>Inserisci i nomi dei giocatori:</p>
+    <div id="nameInputs" class="player-inputs"></div>
+    <button id="startGame">Inizia il gioco</button>
+  </div>
+
+  <!-- Quiz Screen -->
+  <div id="quiz" class="screen">
+    <div class="scoreboard">
+      <h3>Giocatori</h3>
+      <div id="scoreList"></div>
+    </div>
+    <div class="progress" id="progress"></div>
+    <div class="turn-banner" id="turnBanner"></div>
+    <div class="question" id="question"></div>
+    <div class="options" id="options"></div>
+    <div class="feedback" id="feedback"></div>
+    <button id="nextBtn" disabled>Avanti</button>
+  </div>
+
+  <!-- Results Screen -->
+  <div id="results" class="screen">
+    <div class="winner-banner" id="winnerBanner"></div>
+    <ol class="ranking" id="ranking"></ol>
+    <div class="recap-section">
+      <h3>Riepilogo delle risposte</h3>
+      <div id="recap"></div>
+    </div>
+    <button id="playAgain">Gioca di nuovo</button>
+  </div>
+</div>
+
+<script>
+// level 1 = facile, 2 = medio, 3 = difficile
+// Le domande disponibili a ogni livello includono i livelli inferiori.
+const CAPITALS = [
+  // === LIVELLO 1: FACILE (capitali europee principali e grandi potenze) ===
+  { country: "Italia", capital: "Roma", level: 1 },
+  { country: "Francia", capital: "Parigi", level: 1 },
+  { country: "Germania", capital: "Berlino", level: 1 },
+  { country: "Spagna", capital: "Madrid", level: 1 },
+  { country: "Portogallo", capital: "Lisbona", level: 1 },
+  { country: "Regno Unito", capital: "Londra", level: 1 },
+  { country: "Irlanda", capital: "Dublino", level: 1 },
+  { country: "Paesi Bassi", capital: "Amsterdam", level: 1 },
+  { country: "Belgio", capital: "Bruxelles", level: 1 },
+  { country: "Svizzera", capital: "Berna", level: 1 },
+  { country: "Austria", capital: "Vienna", level: 1 },
+  { country: "Grecia", capital: "Atene", level: 1 },
+  { country: "Svezia", capital: "Stoccolma", level: 1 },
+  { country: "Norvegia", capital: "Oslo", level: 1 },
+  { country: "Danimarca", capital: "Copenaghen", level: 1 },
+  { country: "Finlandia", capital: "Helsinki", level: 1 },
+  { country: "Polonia", capital: "Varsavia", level: 1 },
+  { country: "Repubblica Ceca", capital: "Praga", level: 1 },
+  { country: "Ungheria", capital: "Budapest", level: 1 },
+  { country: "Russia", capital: "Mosca", level: 1 },
+  { country: "Stati Uniti", capital: "Washington", level: 1 },
+  { country: "Canada", capital: "Ottawa", level: 1 },
+  { country: "Cina", capital: "Pechino", level: 1 },
+  { country: "Giappone", capital: "Tokyo", level: 1 },
+  { country: "India", capital: "Nuova Delhi", level: 1 },
+  { country: "Brasile", capital: "Brasilia", level: 1 },
+  { country: "Argentina", capital: "Buenos Aires", level: 1 },
+  { country: "Australia", capital: "Canberra", level: 1 },
+  { country: "Egitto", capital: "Il Cairo", level: 1 },
+  { country: "Messico", capital: "Città del Messico", level: 1 },
+
+  // === LIVELLO 2: MEDIO (resto d'Europa + paesi extra-UE significativi) ===
+  { country: "Romania", capital: "Bucarest", level: 2 },
+  { country: "Bulgaria", capital: "Sofia", level: 2 },
+  { country: "Croazia", capital: "Zagabria", level: 2 },
+  { country: "Serbia", capital: "Belgrado", level: 2 },
+  { country: "Slovacchia", capital: "Bratislava", level: 2 },
+  { country: "Slovenia", capital: "Lubiana", level: 2 },
+  { country: "Albania", capital: "Tirana", level: 2 },
+  { country: "Lussemburgo", capital: "Lussemburgo", level: 2 },
+  { country: "Islanda", capital: "Reykjavík", level: 2 },
+  { country: "Estonia", capital: "Tallinn", level: 2 },
+  { country: "Lettonia", capital: "Riga", level: 2 },
+  { country: "Lituania", capital: "Vilnius", level: 2 },
+  { country: "Cipro", capital: "Nicosia", level: 2 },
+  { country: "Malta", capital: "La Valletta", level: 2 },
+  { country: "Ucraina", capital: "Kiev", level: 2 },
+  { country: "Turchia", capital: "Ankara", level: 2 },
+  { country: "Marocco", capital: "Rabat", level: 2 },
+  { country: "Sudafrica", capital: "Pretoria", level: 2 },
+  { country: "Israele", capital: "Gerusalemme", level: 2 },
+  { country: "Arabia Saudita", capital: "Riad", level: 2 },
+  { country: "Iran", capital: "Teheran", level: 2 },
+  { country: "Iraq", capital: "Baghdad", level: 2 },
+  { country: "Corea del Sud", capital: "Seul", level: 2 },
+  { country: "Thailandia", capital: "Bangkok", level: 2 },
+  { country: "Vietnam", capital: "Hanoi", level: 2 },
+  { country: "Indonesia", capital: "Giacarta", level: 2 },
+  { country: "Filippine", capital: "Manila", level: 2 },
+  { country: "Pakistan", capital: "Islamabad", level: 2 },
+  { country: "Nuova Zelanda", capital: "Wellington", level: 2 },
+  { country: "Cuba", capital: "L'Avana", level: 2 },
+  { country: "Colombia", capital: "Bogotà", level: 2 },
+  { country: "Perù", capital: "Lima", level: 2 },
+  { country: "Venezuela", capital: "Caracas", level: 2 },
+  { country: "Cile", capital: "Santiago", level: 2 },
+  { country: "Nigeria", capital: "Abuja", level: 2 },
+  { country: "Kenya", capital: "Nairobi", level: 2 },
+  { country: "Etiopia", capital: "Addis Abeba", level: 2 },
+
+  // === LIVELLO 3: DIFFICILE (micro-stati, paesi meno noti) ===
+  { country: "Bosnia ed Erzegovina", capital: "Sarajevo", level: 3 },
+  { country: "Macedonia del Nord", capital: "Skopje", level: 3 },
+  { country: "Montenegro", capital: "Podgorica", level: 3 },
+  { country: "Moldavia", capital: "Chișinău", level: 3 },
+  { country: "Bielorussia", capital: "Minsk", level: 3 },
+  { country: "Andorra", capital: "Andorra la Vella", level: 3 },
+  { country: "Liechtenstein", capital: "Vaduz", level: 3 },
+  { country: "Monaco", capital: "Monaco", level: 3 },
+  { country: "San Marino", capital: "San Marino", level: 3 },
+  { country: "Kosovo", capital: "Pristina", level: 3 },
+  { country: "Kazakistan", capital: "Astana", level: 3 },
+  { country: "Uzbekistan", capital: "Tashkent", level: 3 },
+  { country: "Mongolia", capital: "Ulan Bator", level: 3 },
+  { country: "Cambogia", capital: "Phnom Penh", level: 3 },
+  { country: "Laos", capital: "Vientiane", level: 3 },
+  { country: "Bangladesh", capital: "Dacca", level: 3 },
+  { country: "Nepal", capital: "Katmandu", level: 3 },
+  { country: "Sri Lanka", capital: "Colombo", level: 3 },
+  { country: "Afghanistan", capital: "Kabul", level: 3 },
+  { country: "Qatar", capital: "Doha", level: 3 },
+  { country: "Emirati Arabi Uniti", capital: "Abu Dhabi", level: 3 },
+  { country: "Kuwait", capital: "Kuwait City", level: 3 },
+  { country: "Giordania", capital: "Amman", level: 3 },
+  { country: "Libano", capital: "Beirut", level: 3 },
+  { country: "Siria", capital: "Damasco", level: 3 },
+  { country: "Georgia", capital: "Tbilisi", level: 3 },
+  { country: "Armenia", capital: "Yerevan", level: 3 },
+  { country: "Azerbaigian", capital: "Baku", level: 3 },
+  { country: "Algeria", capital: "Algeri", level: 3 },
+  { country: "Tunisia", capital: "Tunisi", level: 3 },
+  { country: "Libia", capital: "Tripoli", level: 3 },
+  { country: "Senegal", capital: "Dakar", level: 3 },
+  { country: "Ghana", capital: "Accra", level: 3 },
+  { country: "Camerun", capital: "Yaoundé", level: 3 },
+  { country: "Tanzania", capital: "Dodoma", level: 3 },
+  { country: "Uganda", capital: "Kampala", level: 3 },
+  { country: "Angola", capital: "Luanda", level: 3 },
+  { country: "Madagascar", capital: "Antananarivo", level: 3 },
+  { country: "Namibia", capital: "Windhoek", level: 3 },
+  { country: "Botswana", capital: "Gaborone", level: 3 },
+  { country: "Costa Rica", capital: "San José", level: 3 },
+  { country: "Panama", capital: "Panama", level: 3 },
+  { country: "Ecuador", capital: "Quito", level: 3 },
+  { country: "Uruguay", capital: "Montevideo", level: 3 },
+  { country: "Paraguay", capital: "Asunción", level: 3 },
+  { country: "Bolivia", capital: "Sucre", level: 3 }
+];
+
+const state = {
+  players: [],
+  difficulty: 1,
+  questionsPerPlayer: 10,
+  questions: [],
+  currentIndex: 0,
+  selectedOption: null
+};
+
+const $ = (id) => document.getElementById(id);
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(id).classList.add('active');
+}
+
+function shuffle(array) {
+  const a = [...array];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function poolForDifficulty(level) {
+  return CAPITALS.filter(c => c.level <= level);
+}
+
+function updatePoolHint() {
+  const pool = poolForDifficulty(state.difficulty);
+  const players = parseInt($('numPlayers').value, 10) || 2;
+  const qpp = parseInt($('numQuestions').value, 10) || 10;
+  const total = players * qpp;
+  const ok = total <= pool.length;
+  $('poolHint').textContent =
+    `Disponibili ${pool.length} domande in questo livello. Totale richiesto: ${total}` +
+    (ok ? ' ✓' : ` — riduci il numero di domande o di giocatori (max ${Math.floor(pool.length / players)} per giocatore).`);
+  $('poolHint').style.color = ok ? 'rgba(255,255,255,0.75)' : '#ffb3a0';
+}
+
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    state.difficulty = parseInt(btn.dataset.level, 10);
+    updatePoolHint();
+  });
+});
+$('numPlayers').addEventListener('input', updatePoolHint);
+$('numQuestions').addEventListener('change', updatePoolHint);
+updatePoolHint();
+
+$('confirmCount').addEventListener('click', () => {
+  const n = parseInt($('numPlayers').value, 10);
+  if (isNaN(n) || n < 2 || n > 6) {
+    alert('Inserisci un numero di giocatori tra 2 e 6');
+    return;
+  }
+  const qpp = parseInt($('numQuestions').value, 10);
+  const pool = poolForDifficulty(state.difficulty);
+  if (n * qpp > pool.length) {
+    alert(`Servono ${n * qpp} domande uniche ma il livello scelto ne offre solo ${pool.length}. Riduci giocatori, domande o aumenta la difficoltà.`);
+    return;
+  }
+  state.questionsPerPlayer = qpp;
+
+  const container = $('nameInputs');
+  container.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = `Nome giocatore ${i + 1}`;
+    input.value = `Giocatore ${i + 1}`;
+    container.appendChild(input);
+  }
+  showScreen('names');
+});
+
+$('startGame').addEventListener('click', () => {
+  const inputs = $('nameInputs').querySelectorAll('input');
+  state.players = Array.from(inputs).map((inp, i) => ({
+    name: inp.value.trim() || `Giocatore ${i + 1}`,
+    score: 0
+  }));
+
+  // Estrai N domande UNICHE dall'intero pool, poi assegnale a turni.
+  const pool = poolForDifficulty(state.difficulty);
+  const total = state.players.length * state.questionsPerPlayer;
+  const picked = shuffle(pool).slice(0, total);
+
+  state.questions = picked.map((entry, idx) => {
+    const playerIndex = idx % state.players.length;
+    // Distrattori: 3 capitali diverse pescate dal pool del livello.
+    const wrongs = shuffle(pool.filter(c => c.capital !== entry.capital)).slice(0, 3);
+    const options = shuffle([entry.capital, ...wrongs.map(w => w.capital)]);
+    return {
+      playerIndex,
+      country: entry.country,
+      correct: entry.capital,
+      options,
+      chosen: null
+    };
+  });
+
+  state.currentIndex = 0;
+  showScreen('quiz');
+  renderQuestion();
+});
+
+function renderScoreboard(activePlayerIdx) {
+  const list = $('scoreList');
+  list.innerHTML = '';
+  state.players.forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'score-row' + (i === activePlayerIdx ? ' active' : '');
+    row.innerHTML = `<span>${p.name}</span><span>turno</span>`;
+    if (i !== activePlayerIdx) row.querySelector('span:last-child').textContent = '';
+    list.appendChild(row);
+  });
+}
+
+function renderQuestion() {
+  state.selectedOption = null;
+  const q = state.questions[state.currentIndex];
+  renderScoreboard(q.playerIndex);
+  $('progress').textContent = `Domanda ${state.currentIndex + 1} di ${state.questions.length}`;
+  $('turnBanner').textContent = `Turno di ${state.players[q.playerIndex].name}`;
+  $('question').textContent = `Qual è la capitale di ${q.country}?`;
+  $('feedback').textContent = 'Le risposte corrette saranno svelate alla fine della partita.';
+  $('nextBtn').disabled = true;
+  $('nextBtn').textContent = state.currentIndex === state.questions.length - 1 ? 'Vedi risultati' : 'Avanti';
+
+  const opts = $('options');
+  opts.innerHTML = '';
+  q.options.forEach(option => {
+    const btn = document.createElement('button');
+    btn.className = 'option';
+    btn.textContent = option;
+    btn.addEventListener('click', () => selectAnswer(btn, option, q));
+    opts.appendChild(btn);
+  });
+}
+
+function selectAnswer(btn, choice, q) {
+  q.chosen = choice;
+  state.selectedOption = choice;
+  $('options').querySelectorAll('.option').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  $('nextBtn').disabled = false;
+}
+
+$('nextBtn').addEventListener('click', () => {
+  if (state.selectedOption === null) return;
+  state.currentIndex++;
+  if (state.currentIndex >= state.questions.length) {
+    finalizeAndShowResults();
+  } else {
+    renderQuestion();
+  }
+});
+
+function finalizeAndShowResults() {
+  state.questions.forEach(q => {
+    if (q.chosen === q.correct) state.players[q.playerIndex].score++;
+  });
+
+  const sorted = [...state.players]
+    .map((p, i) => ({ ...p, idx: i }))
+    .sort((a, b) => b.score - a.score);
+  const top = sorted[0];
+  const tied = sorted.filter(p => p.score === top.score);
+  const banner = $('winnerBanner');
+  if (tied.length > 1) {
+    banner.textContent = `Pareggio (${top.score} pt) tra: ${tied.map(p => p.name).join(', ')}`;
+  } else {
+    banner.textContent = `Vince ${top.name} con ${top.score} punti!`;
+  }
+
+  const ranking = $('ranking');
+  ranking.innerHTML = '';
+  sorted.forEach((p, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${i + 1}. ${p.name}</span><span>${p.score} pt</span>`;
+    ranking.appendChild(li);
+  });
+
+  // Riepilogo per giocatore
+  const recap = $('recap');
+  recap.innerHTML = '';
+  state.players.forEach((p, i) => {
+    const section = document.createElement('div');
+    section.innerHTML = `<h3>${p.name} — ${p.score} pt</h3>`;
+    state.questions
+      .filter(q => q.playerIndex === i)
+      .forEach((q, n) => {
+        const correct = q.chosen === q.correct;
+        const item = document.createElement('div');
+        item.className = 'recap-item ' + (correct ? 'correct' : 'wrong');
+        const chosenText = q.chosen
+          ? (correct
+              ? `<span class="ok">${q.chosen}</span>`
+              : `<span class="ko">${q.chosen}</span> → <span class="ok">${q.correct}</span>`)
+          : `nessuna risposta → <span class="ok">${q.correct}</span>`;
+        item.innerHTML = `
+          <div class="q">${n + 1}. Capitale di ${q.country}</div>
+          <div class="ans">Risposta: ${chosenText}</div>
+        `;
+        section.appendChild(item);
+      });
+    recap.appendChild(section);
+  });
+
+  showScreen('results');
+}
+
+$('playAgain').addEventListener('click', () => {
+  state.players = [];
+  state.questions = [];
+  state.currentIndex = 0;
+  showScreen('setup');
+  updatePoolHint();
+});
+</script>
+</body>
+</html>
