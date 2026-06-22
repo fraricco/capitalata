@@ -9,7 +9,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; background:#0a1026; }
   body { font-family: 'Segoe UI', Tahoma, sans-serif; color:#fff; user-select:none; -webkit-user-select:none; }
-  #c { display:block; position:fixed; inset:0; }
+  #c { display:block; position:fixed; inset:0; touch-action:none; }
 
   .modal { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
     background:rgba(5,10,25,0.82); backdrop-filter:blur(6px); z-index:50; padding:20px; }
@@ -76,6 +76,22 @@
   .toast{ position:fixed; bottom:140px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.6);
     padding:8px 18px; border-radius:8px; z-index:30; font-size:.9rem; opacity:0; transition:opacity .3s; pointer-events:none; }
   .toast.show{ opacity:1; }
+
+  /* Controlli touch (mobile) */
+  #touch{ position:fixed; inset:0; z-index:20; display:none; pointer-events:none; }
+  #touch.on{ display:block; }
+  #joystick{ position:absolute; left:20px; bottom:28px; width:128px; height:128px; border-radius:50%;
+    background:rgba(255,255,255,0.07); border:2px solid rgba(255,255,255,0.25); pointer-events:auto; touch-action:none; }
+  #stick{ position:absolute; left:50%; top:50%; width:54px; height:54px; margin:-27px 0 0 -27px; border-radius:50%;
+    background:rgba(255,255,255,0.4); border:2px solid rgba(255,255,255,0.6); }
+  #tRight{ position:absolute; right:14px; bottom:28px; display:flex; gap:12px; align-items:flex-end; }
+  .tcol{ display:flex; flex-direction:column; gap:12px; }
+  .tbtn{ width:66px; height:66px; border-radius:16px; background:rgba(0,0,0,0.42); border:2px solid rgba(255,255,255,0.3);
+    color:#fff; font-size:1.7rem; display:flex; align-items:center; justify-content:center; pointer-events:auto;
+    touch-action:none; -webkit-tap-highlight-color:transparent; }
+  .tbtn.small{ width:50px; height:50px; font-size:1.25rem; border-radius:12px; }
+  .tbtn:active{ background:rgba(255,179,71,0.55); }
+
   #loaderr{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:90; text-align:center; padding:30px; }
 </style>
 </head>
@@ -95,6 +111,23 @@
 <div id="hotbar" class="hidden"></div>
 <div id="hint" class="hidden"></div>
 <div id="toast" class="toast"></div>
+
+<!-- Controlli touch (mobile) -->
+<div id="touch">
+  <div id="joystick"><div id="stick"></div></div>
+  <div id="tRight">
+    <div class="tcol">
+      <button class="tbtn small" id="tbInv">🎒</button>
+      <button class="tbtn small" id="tbFly">✈️</button>
+      <button class="tbtn small" id="tbDown">⬇️</button>
+    </div>
+    <div class="tcol">
+      <button class="tbtn" id="tbPlace">🧱</button>
+      <button class="tbtn" id="tbMine">⛏️</button>
+      <button class="tbtn" id="tbJump">⤴️</button>
+    </div>
+  </div>
+</div>
 
 <div id="panel" class="modal hidden">
   <div class="panel-box">
@@ -242,6 +275,8 @@ let mobs=[];
 let inv={}, survOrder=[], creativeHotbar=[GRASS,DIRT,COBBLE,PLANKS,LOG,GLASS,TORCH,SAND,STONE], selSlot=0;
 const keys={};
 let mineCD=0, placeCD=0, leftDown=false, rightDown=false;
+const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints>0);
+let paused=false, joyFwd=0, joyStrafe=0;
 const chunks=new Map(); // "cx,cz" -> {solid:Mesh, liquid:Mesh}
 
 const idx=(x,y,z)=> x + z*WX + y*WX*WZ;
@@ -410,12 +445,14 @@ function moveAxis(ax, d){
 function updatePlayer(dt){
   const f=[ -Math.sin(yaw),0,-Math.cos(yaw) ];   // avanti orizzontale
   const r=[ Math.cos(yaw),0,-Math.sin(yaw) ];     // destra
-  let mx=0,mz=0;
-  if(keys['w']) { mx+=f[0]; mz+=f[2]; }
-  if(keys['s']) { mx-=f[0]; mz-=f[2]; }
-  if(keys['d']) { mx+=r[0]; mz+=r[2]; }
-  if(keys['a']) { mx-=r[0]; mz-=r[2]; }
-  const len=Math.hypot(mx,mz); if(len>0){ mx/=len; mz/=len; }
+  let fwd=0, strafe=0;
+  if(keys['w']) fwd+=1;
+  if(keys['s']) fwd-=1;
+  if(keys['d']) strafe+=1;
+  if(keys['a']) strafe-=1;
+  fwd+=joyFwd; strafe+=joyStrafe;
+  let mx=f[0]*fwd + r[0]*strafe, mz=f[2]*fwd + r[2]*strafe;
+  const len=Math.hypot(mx,mz); if(len>1){ mx/=len; mz/=len; }
   const speed = player.flying?FLY:WALK;
   player.vx=mx*speed; player.vz=mz*speed;
 
@@ -689,7 +726,7 @@ let last=0, hudT=0;
 function loop(ts){
   if(!running){ return; }
   let dt=(ts-last)/1000; last=ts; if(dt>0.05)dt=0.05;
-  const sim = locked && !panelOpen;
+  const sim = !panelOpen && (isTouch ? !paused : locked);
   if(sim){
     timeOfDay+=dt/DAY_LENGTH; if(timeOfDay>=1){ timeOfDay-=1; dayCount++; }
     const night=isNight();
@@ -730,21 +767,26 @@ function startGame(m){
 
   genWorld(); buildAllChunks();
   renderHotbar(); renderHearts(); renderClock();
-  document.getElementById('hint').textContent = m==='creative'
-    ? 'WASD muovi · Mouse/Frecce guardati intorno · Spazio su / Shift giù · F volo · Clic sx scava · Clic dx posiziona · E blocchi · 1-9 slot · ESC pausa'
-    : 'WASD muovi · Mouse/Frecce guardati intorno · Spazio salta · Clic sx scava/attacca · Clic dx posiziona · E crafting · 1-9 slot · Sopravvivi alla notte!';
+  document.getElementById('hint').textContent = isTouch
+    ? (m==='creative'
+        ? 'Joystick: muovi · trascina lo schermo: guarda · ⛏️ scava · 🧱 posiziona · ⤴️ su · ✈️ vola · 🎒 blocchi'
+        : 'Joystick: muovi · trascina lo schermo: guarda · ⛏️ scava/attacca · 🧱 posiziona · ⤴️ salta · 🎒 crafting · sopravvivi alla notte!')
+    : (m==='creative'
+        ? 'WASD muovi · Mouse/Frecce guardati intorno · Spazio su / Shift giù · F volo · Clic sx scava · Clic dx posiziona · E blocchi · 1-9 slot · ESC pausa'
+        : 'WASD muovi · Mouse/Frecce guardati intorno · Spazio salta · Clic sx scava/attacca · Clic dx posiziona · E crafting · 1-9 slot · Sopravvivi alla notte!');
 
-  running=true; last=performance.now();
+  running=true; last=performance.now(); paused=false;
   requestAnimationFrame(loop);
-  canvas.requestPointerLock();
+  if(isTouch){ showTouch(true); updateTouchAux(); }
+  else canvas.requestPointerLock();
 }
 function gameOver(){
-  running=false; document.exitPointerLock?.();
+  running=false; document.exitPointerLock?.(); showTouch(false);
   document.getElementById('goText').textContent=`Hai resistito fino al Giorno ${dayCount}. Un mostro ha avuto la meglio su di te…`;
   document.getElementById('gameover').classList.remove('hidden');
 }
 function backToMenu(){
-  running=false; document.exitPointerLock?.();
+  running=false; document.exitPointerLock?.(); showTouch(false); paused=false;
   ['gameover','panel','pause'].forEach(id=>document.getElementById(id).classList.add('hidden'));
   ['hud','hotbar','hint','crosshair'].forEach(id=>document.getElementById(id).classList.add('hidden'));
   document.getElementById('menu').classList.remove('hidden');
@@ -776,6 +818,7 @@ window.addEventListener('keydown',e=>{
 window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
 
 canvas.addEventListener('mousedown',e=>{
+  if(isTouch) return;
   if(!running) return;
   if(!locked){ if(!panelOpen) canvas.requestPointerLock(); return; }
   if(e.button===0){ leftDown=true; doLeft(); mineCD=mode==='creative'?0.12:0.24; }
@@ -790,12 +833,50 @@ canvas.addEventListener('wheel',e=>{
 },{passive:false});
 
 document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>startGame(b.dataset.mode)));
-document.getElementById('closePanel').addEventListener('click',()=>{ closePanel(); if(running) canvas.requestPointerLock(); });
-document.getElementById('menuBtn').addEventListener('click',()=>{ document.exitPointerLock?.(); showPause(); });
-document.getElementById('resumeBtn').addEventListener('click',()=>{ hidePause(); canvas.requestPointerLock(); });
+document.getElementById('closePanel').addEventListener('click',()=>{ closePanel(); if(running && !isTouch) canvas.requestPointerLock(); });
+document.getElementById('menuBtn').addEventListener('click',()=>{ if(isTouch){ paused=true; showTouch(false); showPause(); } else { document.exitPointerLock?.(); showPause(); } });
+document.getElementById('resumeBtn').addEventListener('click',()=>{ hidePause(); if(isTouch){ paused=false; showTouch(true); } else canvas.requestPointerLock(); });
 document.getElementById('pauseMenu').addEventListener('click',backToMenu);
 document.getElementById('goRetry').addEventListener('click',()=>startGame(mode));
 document.getElementById('goMenu').addEventListener('click',backToMenu);
+
+/* ===================== Controlli touch (mobile) ===================== */
+function showTouch(on){ document.getElementById('touch').classList.toggle('on', !!on && isTouch); }
+function updateTouchAux(){ if(!isTouch) return;
+  document.getElementById('tbFly').style.display = mode==='creative'?'flex':'none';
+  document.getElementById('tbDown').style.display = (mode==='creative'&&player.flying)?'flex':'none';
+}
+if(isTouch){
+  const joy=document.getElementById('joystick'), stick=document.getElementById('stick');
+  let joyId=null, jcx=0, jcy=0; const R=50;
+  function moveStick(t){ let dx=t.clientX-jcx, dy=t.clientY-jcy; const d=Math.hypot(dx,dy);
+    if(d>R){ dx*=R/d; dy*=R/d; } stick.style.transform=`translate(${dx}px,${dy}px)`; joyStrafe=dx/R; joyFwd=-dy/R; }
+  joy.addEventListener('touchstart',e=>{ e.preventDefault(); const t=e.changedTouches[0]; joyId=t.identifier;
+    const r=joy.getBoundingClientRect(); jcx=r.left+r.width/2; jcy=r.top+r.height/2; moveStick(t); },{passive:false});
+  joy.addEventListener('touchmove',e=>{ e.preventDefault(); for(const t of e.changedTouches) if(t.identifier===joyId) moveStick(t); },{passive:false});
+  const endJoy=e=>{ for(const t of e.changedTouches) if(t.identifier===joyId){ joyId=null; joyFwd=joyStrafe=0; stick.style.transform='translate(0,0)'; } };
+  joy.addEventListener('touchend',endJoy); joy.addEventListener('touchcancel',endJoy);
+
+  // guarda: trascina sul canvas
+  let lookId=null, lx=0, ly=0;
+  canvas.addEventListener('touchstart',e=>{ e.preventDefault(); for(const t of e.changedTouches){ if(lookId===null){ lookId=t.identifier; lx=t.clientX; ly=t.clientY; } } },{passive:false});
+  canvas.addEventListener('touchmove',e=>{ e.preventDefault(); for(const t of e.changedTouches) if(t.identifier===lookId){
+      yaw-=(t.clientX-lx)*0.005; pitch-=(t.clientY-ly)*0.005; const lim=Math.PI/2-0.02; pitch=Math.max(-lim,Math.min(lim,pitch));
+      lx=t.clientX; ly=t.clientY; } },{passive:false});
+  const endLook=e=>{ for(const t of e.changedTouches) if(t.identifier===lookId) lookId=null; };
+  canvas.addEventListener('touchend',endLook); canvas.addEventListener('touchcancel',endLook);
+
+  const bind=(id,down,up)=>{ const el=document.getElementById(id);
+    el.addEventListener('touchstart',e=>{ e.preventDefault(); down&&down(); },{passive:false});
+    el.addEventListener('touchend',e=>{ e.preventDefault(); up&&up(); },{passive:false});
+    el.addEventListener('touchcancel',()=>{ up&&up(); }); };
+  bind('tbMine',()=>{ leftDown=true; },()=>{ leftDown=false; });
+  bind('tbPlace',()=>{ rightDown=true; doRight(); placeCD=0.18; },()=>{ rightDown=false; });
+  bind('tbJump',()=>{ keys[' ']=true; },()=>{ keys[' ']=false; });
+  bind('tbDown',()=>{ keys['shift']=true; },()=>{ keys['shift']=false; });
+  bind('tbFly',()=>{ if(mode==='creative'){ player.flying=!player.flying; player.vy=0; updateTouchAux(); toast(player.flying?'Volo attivato':'Volo disattivato'); } });
+  bind('tbInv',()=>{ togglePanel(); });
+}
 
 })(); }
 </script>
