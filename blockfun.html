@@ -9,7 +9,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; background:#0a1026; }
   body { font-family: 'Segoe UI', Tahoma, sans-serif; color:#fff; user-select:none; -webkit-user-select:none; }
-  #c { display:block; position:fixed; inset:0; touch-action:none; }
+  #c { display:block; position:fixed; inset:0; touch-action:none; cursor:grab; }
 
   .modal { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
     background:rgba(5,10,25,0.82); backdrop-filter:blur(6px); z-index:50; padding:20px; }
@@ -149,7 +149,7 @@
 <div id="pause" class="modal hidden">
   <div class="panel-box">
     <h2>⏸️ In pausa</h2>
-    <p>Clicca per tornare a giocare.<br><small style="opacity:.7">Mouse o frecce per guardarti intorno · ESC per la pausa</small></p>
+    <p>Premi Riprendi per tornare a giocare.<br><small style="opacity:.7">Frecce: muoviti · trascina il mouse: guarda · ESC: pausa</small></p>
     <button class="btn" id="resumeBtn">▶ Riprendi</button>
     <button class="btn ghost" id="pauseMenu">Torna al menu</button>
   </div>
@@ -268,7 +268,7 @@ window.addEventListener('resize',resize); resize();
 
 /* ===================== Stato ===================== */
 let world=new Uint8Array(WX*WY*WZ);
-let mode='creative', running=false, locked=false, panelOpen=false;
+let mode='creative', running=false, panelOpen=false;
 let timeOfDay=0.18, dayCount=1, mobTimer=0;
 const player={ x:0,y:0,z:0, vx:0,vy:0,vz:0, onGround:false, flying:false,
                hp:20, maxhp:20, hurtT:0, attackT:0 };
@@ -448,10 +448,10 @@ function updatePlayer(dt){
   const f=[ -Math.sin(yaw),0,-Math.cos(yaw) ];   // avanti orizzontale
   const r=[ Math.cos(yaw),0,-Math.sin(yaw) ];     // destra
   let fwd=0, strafe=0;
-  if(keys['w']) fwd+=1;
-  if(keys['s']) fwd-=1;
-  if(keys['d']) strafe+=1;
-  if(keys['a']) strafe-=1;
+  if(keys['w']||keys['arrowup'])    fwd+=1;
+  if(keys['s']||keys['arrowdown'])  fwd-=1;
+  if(keys['d']||keys['arrowright']) strafe+=1;
+  if(keys['a']||keys['arrowleft'])  strafe-=1;
   fwd+=joyFwd; strafe+=joyStrafe;
   let mx=f[0]*fwd + r[0]*strafe, mz=f[2]*fwd + r[2]*strafe;
   const len=Math.hypot(mx,mz); if(len>1){ mx/=len; mz/=len; }
@@ -476,14 +476,6 @@ function updatePlayer(dt){
   if(player.flying) moveAxis('y',player.vy*dt);
   moveAxis('x',player.vx*dt);
   moveAxis('z',player.vz*dt);
-
-  // gira la visuale anche con le frecce (sinistra/destra/dietro, su/giù)
-  const TURN=2.0;
-  if(keys['arrowleft'])  yaw+=TURN*dt;
-  if(keys['arrowright']) yaw-=TURN*dt;
-  if(keys['arrowup'])    pitch+=TURN*dt;
-  if(keys['arrowdown'])  pitch-=TURN*dt;
-  const plim=Math.PI/2-0.02; pitch=Math.max(-plim,Math.min(plim,pitch));
 
   // limiti orizzontali
   player.x=Math.max(PW+0.01,Math.min(WX-PW-0.01,player.x));
@@ -789,7 +781,7 @@ let last=0, hudT=0;
 function loop(ts){
   if(!running){ return; }
   let dt=(ts-last)/1000; last=ts; if(dt>0.05)dt=0.05;
-  const sim = !panelOpen && (isTouch ? !paused : locked);
+  const sim = !panelOpen && !paused;
   if(sim){
     timeOfDay+=dt/DAY_LENGTH; if(timeOfDay>=1){ timeOfDay-=1; dayCount++; }
     const night=isNight();
@@ -838,13 +830,12 @@ function startGame(m){
         ? 'Joystick: muovi · trascina lo schermo: guarda · ⛏️ scava · 🧱 posiziona · ⤴️ su · ✈️ vola · 🎒 blocchi'
         : 'Joystick: muovi · trascina lo schermo: guarda · ⛏️ scava/attacca · 🧱 posiziona · ⤴️ salta · 🎒 crafting · sopravvivi alla notte!')
     : (m==='creative'
-        ? 'WASD muovi · Mouse/Frecce guardati intorno · Spazio su / Shift giù · F volo · Clic sx scava · Clic dx posiziona · E blocchi · 1-9 slot · ESC pausa'
-        : 'WASD muovi · Mouse/Frecce guardati intorno · Spazio salta · Clic sx scava/attacca · Clic dx posiziona · E crafting · 1-9 slot · Sopravvivi alla notte!');
+        ? 'Frecce/WASD: muovi · trascina il mouse: guarda · Spazio su / Shift giù · F volo · clic scava · clic dx posiziona · E blocchi · 1-9 slot · ESC pausa'
+        : 'Frecce/WASD: muovi · trascina il mouse: guarda · Spazio salta · clic scava/attacca · clic dx posiziona · E crafting · 1-9 slot · Sopravvivi alla notte!');
 
   running=true; last=performance.now(); paused=false;
   requestAnimationFrame(loop);
   if(isTouch){ showTouch(true); updateTouchAux(); }
-  else canvas.requestPointerLock();
 }
 function gameOver(){
   running=false; document.exitPointerLock?.(); showTouch(false);
@@ -860,48 +851,57 @@ function backToMenu(){
 }
 function showPause(){ if(running && !panelOpen){ document.getElementById('pause').classList.remove('hidden'); } }
 function hidePause(){ document.getElementById('pause').classList.add('hidden'); }
+function pauseGame(){ if(!running||panelOpen) return; paused=true; if(isTouch) showTouch(false); showPause(); }
+function resumeGame(){ paused=false; hidePause(); if(isTouch) showTouch(true); }
 
 /* ===================== Input ===================== */
-document.addEventListener('pointerlockchange',()=>{
-  locked=(document.pointerLockElement===canvas);
-  if(running){ if(locked) hidePause(); else if(!panelOpen) showPause(); }
-});
-document.addEventListener('mousemove',e=>{
-  if(!locked) return;
-  yaw-=e.movementX*0.0022; pitch-=e.movementY*0.0022;
-  const lim=Math.PI/2-0.02; pitch=Math.max(-lim,Math.min(lim,pitch));
+// Sguardo col trascinamento del mouse/trackpad (niente pointer-lock)
+let dragBtn=-1, dragging=false, dragLX=0, dragLY=0, dragDownX=0, dragDownY=0;
+window.addEventListener('mousemove',e=>{
+  if(isTouch || dragBtn<0) return;
+  if(!dragging && Math.hypot(e.clientX-dragDownX,e.clientY-dragDownY)>5){
+    dragging=true; leftDown=false; rightDown=false; canvas.style.cursor='grabbing';
+  }
+  if(dragging){
+    yaw-=(e.clientX-dragLX)*0.004; pitch-=(e.clientY-dragLY)*0.004;
+    const lim=Math.PI/2-0.02; pitch=Math.max(-lim,Math.min(lim,pitch));
+  }
+  dragLX=e.clientX; dragLY=e.clientY;
 });
 window.addEventListener('keydown',e=>{
   const k=e.key.toLowerCase(); keys[k]=true;
   if(k==='shift') keys['shift']=true;
-  if(k===' ') e.preventDefault();
+  if(k===' '||k==='arrowup'||k==='arrowdown'||k==='arrowleft'||k==='arrowright') e.preventDefault();
   if(!running) return;
   if(k==='e'){ e.preventDefault(); togglePanel(); }
-  if(k==='escape'){ if(panelOpen) closePanel(); }
+  if(k==='escape'){ if(panelOpen) closePanel(); else (paused?resumeGame():pauseGame()); }
   if(k==='f' && mode==='creative'){ player.flying=!player.flying; player.vy=0; toast(player.flying?'Volo attivato':'Volo disattivato'); }
   if(k>='1'&&k<='9'){ const i=+k-1, max=mode==='creative'?creativeHotbar.length:survOrder.length; if(i<max){ selSlot=i; renderHotbar(); } }
 });
 window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
 
 canvas.addEventListener('mousedown',e=>{
-  if(isTouch) return;
-  if(!running) return;
-  if(!locked){ if(!panelOpen) canvas.requestPointerLock(); return; }
+  if(isTouch || !running || panelOpen || paused) return;
+  e.preventDefault();
+  dragBtn=e.button; dragging=false; dragDownX=dragLX=e.clientX; dragDownY=dragLY=e.clientY;
   if(e.button===0){ leftDown=true; doLeft(); mineCD=mode==='creative'?0.12:0.24; }
   if(e.button===2){ rightDown=true; doRight(); placeCD=0.18; }
 });
-window.addEventListener('mouseup',e=>{ if(e.button===0)leftDown=false; if(e.button===2)rightDown=false; });
+window.addEventListener('mouseup',e=>{
+  if(e.button===0) leftDown=false; if(e.button===2) rightDown=false;
+  if(e.button===dragBtn){ dragBtn=-1; dragging=false; canvas.style.cursor='grab'; }
+});
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
 canvas.addEventListener('wheel',e=>{
-  if(!locked) return; e.preventDefault();
+  if(isTouch || !running || panelOpen || paused) return; e.preventDefault();
   const max=mode==='creative'?creativeHotbar.length:Math.max(1,survOrder.length);
   selSlot=(selSlot+(e.deltaY>0?1:-1)+max)%max; renderHotbar();
 },{passive:false});
 
 document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>startGame(b.dataset.mode)));
-document.getElementById('closePanel').addEventListener('click',()=>{ closePanel(); if(running && !isTouch) canvas.requestPointerLock(); });
-document.getElementById('menuBtn').addEventListener('click',()=>{ if(isTouch){ paused=true; showTouch(false); showPause(); } else { document.exitPointerLock?.(); showPause(); } });
-document.getElementById('resumeBtn').addEventListener('click',()=>{ hidePause(); if(isTouch){ paused=false; showTouch(true); } else canvas.requestPointerLock(); });
+document.getElementById('closePanel').addEventListener('click',()=>{ closePanel(); });
+document.getElementById('menuBtn').addEventListener('click',()=>{ pauseGame(); });
+document.getElementById('resumeBtn').addEventListener('click',()=>{ resumeGame(); });
 document.getElementById('pauseMenu').addEventListener('click',backToMenu);
 document.getElementById('goRetry').addEventListener('click',()=>startGame(mode));
 document.getElementById('goMenu').addEventListener('click',backToMenu);
