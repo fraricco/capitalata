@@ -198,7 +198,9 @@ const PW=0.3, PH=1.8, EYE=1.62; // mezza-larghezza, altezza, occhi del giocatore
 
 const AIR=0, GRASS=1, DIRT=2, STONE=3, LOG=4, LEAVES=5, SAND=6, WATER=7,
       PLANKS=8, GLASS=9, COAL=10, IRON=11, GOLD=12, DIAMOND=13, COBBLE=14,
-      BEDROCK=15, TABLE=16, BRICK=17, TORCH=18, SNOW=19, CACTUS=20, TNT=21;
+      BEDROCK=15, TABLE=16, BRICK=17, TORCH=18, SNOW=19, CACTUS=20, TNT=21,
+      STONEBRICK=22, CLAY=23, GRAVEL=24, WHITE=25, RED=26, ORANGE=27, YELLOW=28,
+      GREEN=29, BLUE=30, CYAN=31, PURPLE=32, PINK=33, BLACK=34;
 
 const BLOCKS = {
   [GRASS]:{ name:"Erba",   top:"#6ab150", side:"#7a5a32", bottom:"#8a5a2b" },
@@ -222,18 +224,34 @@ const BLOCKS = {
   [SNOW]:{ name:"Neve",    all:"#f3f7fb" },
   [CACTUS]:{ name:"Cactus",all:"#4f9d57" },
   [TNT]:{ name:"TNT", top:"#e0584a", side:"#c0392b", bottom:"#7a2018" },
+  [STONEBRICK]:{ name:"Mattoni di pietra", all:"#9b9b9b" },
+  [CLAY]:{ name:"Argilla", all:"#a7a8b2" },
+  [GRAVEL]:{ name:"Ghiaia", all:"#8d8783" },
+  [WHITE]:{ name:"Blocco bianco",    all:"#eceff1" },
+  [RED]:{ name:"Blocco rosso",       all:"#d2473a" },
+  [ORANGE]:{ name:"Blocco arancione",all:"#e08a2c" },
+  [YELLOW]:{ name:"Blocco giallo",   all:"#ecc94b" },
+  [GREEN]:{ name:"Blocco verde",     all:"#4f9d57" },
+  [BLUE]:{ name:"Blocco blu",        all:"#3a6fc4" },
+  [CYAN]:{ name:"Blocco ciano",      all:"#34b3c4" },
+  [PURPLE]:{ name:"Blocco viola",    all:"#8a4fbf" },
+  [PINK]:{ name:"Blocco rosa",       all:"#e58ab0" },
+  [BLACK]:{ name:"Blocco nero",      all:"#2b2b30" },
 };
 function isSolid(id){ return id!==AIR && BLOCKS[id] && !BLOCKS[id].liquid && !BLOCKS[id].torch; }
 function isOpaque(id){ return isSolid(id) && id!==GLASS && id!==LEAVES; }
 function dropOf(id){ if(id===GRASS) return DIRT; if(id===STONE) return COBBLE; return id; }
 
-const PALETTE=[GRASS,DIRT,STONE,COBBLE,LOG,PLANKS,LEAVES,SAND,GLASS,BRICK,TABLE,TORCH,SNOW,CACTUS,COAL,IRON,GOLD,DIAMOND,TNT];
+const PALETTE=[GRASS,DIRT,STONE,COBBLE,STONEBRICK,BRICK,CLAY,GRAVEL,LOG,PLANKS,LEAVES,SAND,GLASS,TABLE,TORCH,SNOW,CACTUS,TNT,
+  COAL,IRON,GOLD,DIAMOND,
+  WHITE,RED,ORANGE,YELLOW,GREEN,BLUE,CYAN,PURPLE,PINK,BLACK];
 const RECIPES=[
   { name:"Assi di legno",  in:{[LOG]:1},             out:{[PLANKS]:4} },
   { name:"Banco da lavoro",in:{[PLANKS]:4},          out:{[TABLE]:1} },
   { name:"Torce",          in:{[PLANKS]:1,[COAL]:1}, out:{[TORCH]:4} },
   { name:"Vetro (fusione)",in:{[SAND]:1},            out:{[GLASS]:1} },
   { name:"Mattoni",        in:{[COBBLE]:4},          out:{[BRICK]:4} },
+  { name:"Mattoni di pietra",in:{[COBBLE]:4},        out:{[STONEBRICK]:4} },
   { name:"TNT",            in:{[SAND]:4,[COAL]:1},   out:{[TNT]:1} },
 ];
 
@@ -274,6 +292,7 @@ const player={ x:0,y:0,z:0, vx:0,vy:0,vz:0, onGround:false, flying:false,
                hp:20, maxhp:20, hurtT:0, attackT:0 };
 let yaw=0, pitch=0;
 let mobs=[];
+let animals=[], animalTimer=0;
 let inv={}, survOrder=[], creativeHotbar=[GRASS,DIRT,COBBLE,PLANKS,LOG,GLASS,TORCH,SAND,STONE], selSlot=0;
 const keys={};
 let mineCD=0, placeCD=0, leftDown=false, rightDown=false;
@@ -299,10 +318,10 @@ function vnoise(x,z){
 }
 function genWorld(){
   world=new Uint8Array(WX*WY*WZ);
-  const base=Math.floor(WY*0.42), sea=base-2;
+  const base=Math.floor(WY*0.42), sea=base-8;   // mare basso: molta più terra ferma
   const hmap=new Int16Array(WX*WZ);
   for(let z=0;z<WZ;z++) for(let x=0;x<WX;x++){
-    let h=base + (vnoise(x*0.06,z*0.06)-0.5)*16 + (vnoise(x*0.15+9,z*0.15+9)-0.5)*7;
+    let h=base+3 + (vnoise(x*0.06,z*0.06)-0.5)*13 + (vnoise(x*0.15+9,z*0.15+9)-0.5)*6;
     h=Math.max(4,Math.min(WY-10,Math.round(h)));
     hmap[x+z*WX]=h;
   }
@@ -319,6 +338,7 @@ function genWorld(){
         else if(depth>10 && r<0.085 && r>=0.05) id=IRON;
         else if(depth>18 && r<0.10 && r>=0.085) id=GOLD;
         else if(y<base*0.4 && r<0.11 && r>=0.10) id=DIAMOND;
+        else if(r>=0.11 && r<0.14) id=GRAVEL;
       }
       setBlockRaw(x,y,z,id);
     }
@@ -511,7 +531,8 @@ function spawnMob(){
   my+=1; if(getBlock(mx,my,mz)!==AIR) return;
   const mat=new THREE.MeshLambertMaterial({color:0x4a9a4a});
   const mesh=new THREE.Mesh(mobGeo,mat); scene.add(mesh);
-  mobs.push({ x:mx+0.5,y:my,z:mz+0.5, vy:0, hp:14, hurtT:0, dmgCD:0, burn:0, mesh, mat });
+  const mob={ kind:'mob', x:mx+0.5,y:my,z:mz+0.5, vy:0, hp:14, hurtT:0, dmgCD:0, burn:0, mesh, mat };
+  mesh.userData.creature=mob; mobs.push(mob);
 }
 function mobCollides(x,y,z){
   const r=0.3;
@@ -550,6 +571,73 @@ function updateMobs(dt,night){
     m.mesh.position.set(m.x, m.y+0.9, m.z);
     m.mesh.lookAt(player.x, m.y+0.9, player.z);
     if(m.hp<=0 || d>60){ scene.remove(m.mesh); m.mesh.geometry.dispose?0:0; mobs.splice(i,1); }
+  }
+}
+
+/* ===================== Animali (passivi) ===================== */
+const ANIMAL={
+  cow:  { body:0xf2f2f2, head:0x5a4632, leg:0x4a4a4a, bw:0.9, bh:0.7,  bl:1.3, hs:0.45, legH:0.55, speed:1.3, hp:10, drop:0 },
+  pig:  { body:0xe89aa0, head:0xe07f88, leg:0xcf757d, bw:0.8, bh:0.55, bl:1.05,hs:0.4,  legH:0.4,  speed:1.5, hp:10, drop:0 },
+  sheep:{ body:0xeaeaea, head:0xd8c0a8, leg:0x9a8f86, bw:0.85,bh:0.8,  bl:1.1, hs:0.4,  legH:0.5,  speed:1.2, hp:8,  drop:WHITE },
+  horse:{ body:0x8a5a2b, head:0x6e4622, leg:0x4a3420, bw:0.7, bh:0.9,  bl:1.5, hs:0.5,  legH:0.85, speed:2.1, hp:14, drop:0 },
+};
+const ANIMAL_TYPES=['cow','pig','sheep','horse'];
+function makeAnimal(type){
+  const C=ANIMAL[type], g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(C.bw,C.bh,C.bl), new THREE.MeshLambertMaterial({color:C.body}));
+  body.position.y=C.legH+C.bh/2; g.add(body);
+  const head=new THREE.Mesh(new THREE.BoxGeometry(C.hs,C.hs,C.hs), new THREE.MeshLambertMaterial({color:C.head}));
+  head.position.set(0, C.legH+C.bh*0.85, C.bl/2+C.hs*0.25); g.add(head);
+  const legGeo=new THREE.BoxGeometry(0.16,C.legH,0.16), legMat=new THREE.MeshLambertMaterial({color:C.leg});
+  const lx=C.bw/2-0.1, lz=C.bl/2-0.15;
+  for(const [sx,sz] of [[-lx,-lz],[lx,-lz],[-lx,lz],[lx,lz]]){
+    const l=new THREE.Mesh(legGeo,legMat); l.position.set(sx,C.legH/2,sz); g.add(l);
+  }
+  return g;
+}
+function boxCollides(x,y,z){ const r=0.42,h=1.0;
+  for(let yy=Math.floor(y);yy<=Math.floor(y+h-0.01);yy++)
+    for(let zz=Math.floor(z-r);zz<=Math.floor(z+r);zz++)
+      for(let xx=Math.floor(x-r);xx<=Math.floor(x+r);xx++)
+        if(isSolid(getBlock(xx,yy,zz))) return true;
+  return false;
+}
+function spawnAnimal(){
+  if(animals.length>=10) return;
+  const type=ANIMAL_TYPES[Math.floor(Math.random()*ANIMAL_TYPES.length)];
+  const ang=Math.random()*Math.PI*2, dist=8+Math.random()*16;
+  const x=Math.round(player.x+Math.cos(ang)*dist), z=Math.round(player.z+Math.sin(ang)*dist);
+  if(x<1||x>=WX-1||z<1||z>=WZ-1) return;
+  let y=WY-1; while(y>0 && getBlock(x,y,z)===AIR) y--;
+  if(getBlock(x,y,z)!==GRASS) return;   // gli animali nascono sull'erba
+  const def=ANIMAL[type], mesh=makeAnimal(type);
+  const a={ kind:'animal', type, def, x:x+0.5, y:y+1, z:z+0.5, vy:0, hp:def.hp, hurtT:0,
+            flee:0, hx:0, hz:0, heading:Math.random()*Math.PI*2, wander:1, moving:true, drop:def.drop };
+  mesh.position.set(a.x,a.y,a.z); mesh.userData.creature=a; scene.add(mesh); a.mesh=mesh;
+  animals.push(a);
+}
+function updateAnimals(dt){
+  animalTimer-=dt;
+  if(animalTimer<=0){ if(animals.length<10) spawnAnimal(); animalTimer=3+Math.random()*5; }
+  for(let i=animals.length-1;i>=0;i--){
+    const a=animals[i], def=a.def;
+    if(a.hurtT>0) a.hurtT-=dt;
+    let hx=0,hz=0,sp=0;
+    if(a.flee>0){ a.flee-=dt; hx=a.hx; hz=a.hz; sp=def.speed*1.9; }
+    else { a.wander-=dt; if(a.wander<=0){ a.moving=Math.random()<0.7; a.heading=Math.random()*Math.PI*2; a.wander=2+Math.random()*4; }
+      if(a.moving){ hx=Math.sin(a.heading); hz=Math.cos(a.heading); sp=def.speed; } }
+    let blocked=false;
+    const nx=a.x+hx*sp*dt, nz=a.z+hz*sp*dt;
+    if(!boxCollides(nx,a.y,a.z)) a.x=nx; else blocked=true;
+    if(!boxCollides(a.x,a.y,nz)) a.z=nz; else blocked=true;
+    a.vy-=GRAV*dt; if(a.vy<-TERM) a.vy=-TERM;
+    const ny=a.y+a.vy*dt; let onG=false;
+    if(!boxCollides(a.x,ny,a.z)) a.y=ny; else { if(a.vy<0) onG=true; a.vy=0; }
+    if(onG && blocked && (hx||hz)) a.vy=JUMP*0.7;   // saltella sugli ostacoli
+    if(hx||hz) a.mesh.rotation.y=Math.atan2(hx,hz);
+    a.mesh.position.set(a.x,a.y,a.z);
+    a.mesh.children[1].material.color.setHex(a.hurtT>0?0xff7777:def.head);
+    if(a.y<-20 || Math.hypot(a.x-player.x,a.z-player.z)>72){ scene.remove(a.mesh); animals.splice(i,1); }
   }
 }
 
@@ -639,19 +727,27 @@ function raycastVoxel(){
 const mobRaycaster=new THREE.Raycaster(); mobRaycaster.far=REACH;
 function forwardDir(){ return new THREE.Vector3(0,0,-1).applyEuler(camera.rotation).normalize(); }
 
+function creatureFromHit(o){ while(o){ if(o.userData && o.userData.creature) return o.userData.creature; o=o.parent; } return null; }
+function hitCreature(c){
+  c.hurtT=0.2;
+  const dx=c.x-player.x, dz=c.z-player.z, d=Math.hypot(dx,dz)||1;
+  if(c.kind==='mob'){ c.hp-=6; c.x+=dx/d*0.4; c.z+=dz/d*0.4; c.vy=3; }
+  else { c.hp-=5; c.flee=3; c.hx=dx/d; c.hz=dz/d; c.vy=3.5;
+    if(c.hp<=0){ if(mode==='survival' && c.drop) addBlock(c.drop); scene.remove(c.mesh);
+      const i=animals.indexOf(c); if(i>=0) animals.splice(i,1); } }
+}
 function doLeft(){
-  // attacca mostro se nel mirino
+  // attacca la creatura (mostro o animale) nel mirino
   const dir=forwardDir();
   mobRaycaster.set(camera.position, dir);
-  const hits=mobRaycaster.intersectObjects(mobs.map(m=>m.mesh));
+  const roots=[]; for(const m of mobs) roots.push(m.mesh); for(const a of animals) roots.push(a.mesh);
+  const hits=mobRaycaster.intersectObjects(roots, true);
   const vox=raycastVoxel();
-  const mobDist=hits.length?hits[0].distance:Infinity;
+  const cDist=hits.length?hits[0].distance:Infinity;
   const voxDist=vox?Math.hypot(vox.x+0.5-player.x,(vox.y+0.5)-(player.y+EYE),vox.z+0.5-player.z):Infinity;
-  if(mobDist<=REACH && mobDist<voxDist && player.attackT<=0){
-    const mesh=hits[0].object, m=mobs.find(mm=>mm.mesh===mesh);
-    if(m){ m.hp-=6; m.hurtT=0.2; player.attackT=0.35;
-           const dx=m.x-player.x, dz=m.z-player.z, d=Math.hypot(dx,dz)||1; m.x+=dx/d*0.4; m.z+=dz/d*0.4; m.vy=3; }
-    return;
+  if(cDist<=REACH && cDist<voxDist && player.attackT<=0){
+    const cre=creatureFromHit(hits[0].object);
+    if(cre){ player.attackT=0.35; hitCreature(cre); return; }
   }
   if(vox && vox.id===TNT){ igniteTNT(vox.x,vox.y,vox.z,2.6); return; }
   if(vox && vox.id!==BEDROCK){
@@ -787,6 +883,7 @@ function loop(ts){
     const night=isNight();
     updatePlayer(dt);
     updateMobs(dt,night);
+    updateAnimals(dt);
     updateTNT(dt);
     if(leftDown && mineCD<=0){ doLeft(); mineCD=mode==='creative'?0.12:0.24; }
     if(rightDown && placeCD<=0){ doRight(); placeCD=0.18; }
@@ -804,6 +901,7 @@ function loop(ts){
 /* ===================== Avvio / fine ===================== */
 function clearScene(){
   for(const m of mobs){ scene.remove(m.mesh); } mobs=[];
+  for(const a of animals){ scene.remove(a.mesh); } animals=[];
   for(const t of tnts){ scene.remove(t.mesh); } tnts=[];
   for(const f of fx){ scene.remove(f.mesh); } fx=[];
 }
@@ -824,6 +922,7 @@ function startGame(m){
   creativeHotbar=[GRASS,DIRT,COBBLE,PLANKS,LOG,GLASS,TORCH,SAND,STONE];
 
   genWorld(); buildAllChunks();
+  animalTimer=4; for(let k=0;k<6;k++) spawnAnimal();   // qualche animale fin dall'inizio
   renderHotbar(); renderHearts(); renderClock();
   document.getElementById('hint').textContent = isTouch
     ? (m==='creative'
