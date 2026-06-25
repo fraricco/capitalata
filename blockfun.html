@@ -834,6 +834,7 @@ function startGame(m){
         : 'Frecce/WASD: muovi · trascina il mouse: guarda · Spazio salta · clic scava/attacca · clic dx posiziona · E crafting · 1-9 slot · Sopravvivi alla notte!');
 
   running=true; last=performance.now(); paused=false;
+  history.pushState({bf:1},'');   // trappola per il tasto "indietro" del browser
   requestAnimationFrame(loop);
   if(isTouch){ showTouch(true); updateTouchAux(); }
 }
@@ -879,6 +880,11 @@ window.addEventListener('keydown',e=>{
   if(k>='1'&&k<='9'){ const i=+k-1, max=mode==='creative'?creativeHotbar.length:survOrder.length; if(i<max){ selSlot=i; renderHotbar(); } }
 });
 window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
+
+// Il tasto "indietro" del browser non esce dalla partita: mette in pausa e resta nel gioco
+window.addEventListener('popstate',()=>{
+  if(running){ history.pushState({bf:1},''); if(!paused) pauseGame(); }
+});
 
 canvas.addEventListener('mousedown',e=>{
   if(isTouch || !running || panelOpen || paused) return;
