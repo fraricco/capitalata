@@ -198,7 +198,7 @@ const PW=0.3, PH=1.8, EYE=1.62; // mezza-larghezza, altezza, occhi del giocatore
 
 const AIR=0, GRASS=1, DIRT=2, STONE=3, LOG=4, LEAVES=5, SAND=6, WATER=7,
       PLANKS=8, GLASS=9, COAL=10, IRON=11, GOLD=12, DIAMOND=13, COBBLE=14,
-      BEDROCK=15, TABLE=16, BRICK=17, TORCH=18, SNOW=19, CACTUS=20;
+      BEDROCK=15, TABLE=16, BRICK=17, TORCH=18, SNOW=19, CACTUS=20, TNT=21;
 
 const BLOCKS = {
   [GRASS]:{ name:"Erba",   top:"#6ab150", side:"#7a5a32", bottom:"#8a5a2b" },
@@ -221,18 +221,20 @@ const BLOCKS = {
   [TORCH]:{ name:"Torcia",  all:"#ffcf6b", torch:true },
   [SNOW]:{ name:"Neve",    all:"#f3f7fb" },
   [CACTUS]:{ name:"Cactus",all:"#4f9d57" },
+  [TNT]:{ name:"TNT", top:"#e0584a", side:"#c0392b", bottom:"#7a2018" },
 };
 function isSolid(id){ return id!==AIR && BLOCKS[id] && !BLOCKS[id].liquid && !BLOCKS[id].torch; }
 function isOpaque(id){ return isSolid(id) && id!==GLASS && id!==LEAVES; }
 function dropOf(id){ if(id===GRASS) return DIRT; if(id===STONE) return COBBLE; return id; }
 
-const PALETTE=[GRASS,DIRT,STONE,COBBLE,LOG,PLANKS,LEAVES,SAND,GLASS,BRICK,TABLE,TORCH,SNOW,CACTUS,COAL,IRON,GOLD,DIAMOND];
+const PALETTE=[GRASS,DIRT,STONE,COBBLE,LOG,PLANKS,LEAVES,SAND,GLASS,BRICK,TABLE,TORCH,SNOW,CACTUS,COAL,IRON,GOLD,DIAMOND,TNT];
 const RECIPES=[
   { name:"Assi di legno",  in:{[LOG]:1},             out:{[PLANKS]:4} },
   { name:"Banco da lavoro",in:{[PLANKS]:4},          out:{[TABLE]:1} },
   { name:"Torce",          in:{[PLANKS]:1,[COAL]:1}, out:{[TORCH]:4} },
   { name:"Vetro (fusione)",in:{[SAND]:1},            out:{[GLASS]:1} },
   { name:"Mattoni",        in:{[COBBLE]:4},          out:{[BRICK]:4} },
+  { name:"TNT",            in:{[SAND]:4,[COAL]:1},   out:{[TNT]:1} },
 ];
 
 /* ===================== Three setup ===================== */
@@ -559,6 +561,66 @@ function updateMobs(dt,night){
   }
 }
 
+/* ===================== TNT ===================== */
+let tnts=[], fx=[];
+const tntGeo=new THREE.BoxGeometry(1,1,1);
+const boomGeo=new THREE.SphereGeometry(1,12,12);
+function addChunks(set,x,z){ const cx=Math.floor(x/CH),cz=Math.floor(z/CH); set.add(cx+','+cz);
+  if(x%CH===0)set.add((cx-1)+','+cz); if(x%CH===CH-1)set.add((cx+1)+','+cz);
+  if(z%CH===0)set.add(cx+','+(cz-1)); if(z%CH===CH-1)set.add(cx+','+(cz+1)); }
+function rebuildSet(set){ const nx=Math.ceil(WX/CH),nz=Math.ceil(WZ/CH);
+  for(const k of set){ const [a,b]=k.split(',').map(Number); if(a>=0&&b>=0&&a<nx&&b<nz) buildChunk(a,b); } }
+function igniteTNT(x,y,z,fuse,silent){
+  if(getBlock(x,y,z)===TNT){ setBlockRaw(x,y,z,AIR); const s=new Set(); addChunks(s,x,z); rebuildSet(s); }
+  const mat=new THREE.MeshLambertMaterial({color:0xd83a2a});
+  const mesh=new THREE.Mesh(tntGeo,mat); mesh.position.set(x+0.5,y+0.5,z+0.5); scene.add(mesh);
+  tnts.push({x,y,z,fuse:fuse||2.6,blink:0,mesh,mat});
+  if(!silent) toast('💥 TNT innescata!');
+}
+function spawnBoom(x,y,z,r){
+  const mat=new THREE.MeshBasicMaterial({color:0xffa030,transparent:true,opacity:0.85,depthWrite:false});
+  const mesh=new THREE.Mesh(boomGeo,mat); mesh.position.set(x,y,z); mesh.scale.setScalar(0.4); scene.add(mesh);
+  fx.push({mesh,mat,life:0.45,max:0.45,r});
+}
+function explodeTNT(cx,cy,cz){
+  const R=4; const set=new Set(); const chain=[];
+  for(let dx=-R;dx<=R;dx++)for(let dy=-R;dy<=R;dy++)for(let dz=-R;dz<=R;dz++){
+    if(dx*dx+dy*dy+dz*dz>R*R+1) continue;
+    const x=cx+dx,y=cy+dy,z=cz+dz,id=getBlock(x,y,z);
+    if(id===AIR||id===BEDROCK) continue;
+    if(id===TNT){ chain.push([x,y,z]); continue; }
+    setBlockRaw(x,y,z,AIR); addChunks(set,x,z);
+  }
+  rebuildSet(set);
+  spawnBoom(cx+0.5,cy+0.5,cz+0.5,R);
+  // danno ai mostri
+  for(const m of mobs){ const d=Math.hypot(m.x-(cx+0.5),m.y+0.9-(cy+0.5),m.z-(cz+0.5)); if(d<=R+1){ m.hp-=50; m.vy=7; } }
+  // danno al giocatore (solo sopravvivenza)
+  if(mode==='survival'){
+    const d=Math.hypot(player.x-(cx+0.5),player.y+0.9-(cy+0.5),player.z-(cz+0.5));
+    if(d<=R+1.5){
+      const dmg=Math.round(16*Math.max(0,(R+1.5-d)/(R+1.5)));
+      const dx=player.x-(cx+0.5),dz=player.z-(cz+0.5),dd=Math.hypot(dx,dz)||1;
+      player.vx+=dx/dd*9; player.vz+=dz/dd*9; player.vy=9;
+      if(dmg>0){ player.hurtT=0; hurtPlayer(dmg); }
+    }
+  }
+  // reazione a catena
+  for(const [x,y,z] of chain) igniteTNT(x,y,z, 0.1+Math.random()*0.3, true);
+}
+function updateTNT(dt){
+  for(let i=tnts.length-1;i>=0;i--){ const t=tnts[i]; t.fuse-=dt; t.blink+=dt;
+    const fast=t.fuse<1?16:7, on=Math.sin(t.blink*fast)>0;
+    t.mat.color.setHex(on?0xffffff:0xd83a2a);
+    t.mesh.scale.setScalar(1+0.07*Math.sin(t.blink*fast));
+    if(t.fuse<=0){ scene.remove(t.mesh); tnts.splice(i,1); explodeTNT(t.x,t.y,t.z); }
+  }
+  for(let i=fx.length-1;i>=0;i--){ const f=fx[i]; f.life-=dt;
+    f.mesh.scale.setScalar(0.4+(1-f.life/f.max)*f.r*1.1); f.mat.opacity=0.85*(f.life/f.max);
+    if(f.life<=0){ scene.remove(f.mesh); fx.splice(i,1); }
+  }
+}
+
 /* ===================== Raycast voxel (DDA) ===================== */
 function raycastVoxel(){
   const dir=new THREE.Vector3(0,0,-1).applyEuler(camera.rotation).normalize();
@@ -599,6 +661,7 @@ function doLeft(){
            const dx=m.x-player.x, dz=m.z-player.z, d=Math.hypot(dx,dz)||1; m.x+=dx/d*0.4; m.z+=dz/d*0.4; m.vy=3; }
     return;
   }
+  if(vox && vox.id===TNT){ igniteTNT(vox.x,vox.y,vox.z,2.6); return; }
   if(vox && vox.id!==BEDROCK){
     editBlock(vox.x,vox.y,vox.z,AIR);
     if(mode==='survival') addBlock(dropOf(vox.id));
@@ -732,6 +795,7 @@ function loop(ts){
     const night=isNight();
     updatePlayer(dt);
     updateMobs(dt,night);
+    updateTNT(dt);
     if(leftDown && mineCD<=0){ doLeft(); mineCD=mode==='creative'?0.12:0.24; }
     if(rightDown && placeCD<=0){ doRight(); placeCD=0.18; }
     if(mineCD>0)mineCD-=dt; if(placeCD>0)placeCD-=dt;
@@ -748,6 +812,8 @@ function loop(ts){
 /* ===================== Avvio / fine ===================== */
 function clearScene(){
   for(const m of mobs){ scene.remove(m.mesh); } mobs=[];
+  for(const t of tnts){ scene.remove(t.mesh); } tnts=[];
+  for(const f of fx){ scene.remove(f.mesh); } fx=[];
 }
 function startGame(m){
   mode=m;
