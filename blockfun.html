@@ -255,6 +255,47 @@ const RECIPES=[
   { name:"TNT",            in:{[SAND]:4,[COAL]:1},   out:{[TNT]:1} },
 ];
 
+/* ===================== Attrezzi (item, non blocchi) ===================== */
+const STICK=100;                       // id item: gli oggetti (non blocchi) hanno id >= 100
+const ITEMS={ [STICK]:{ name:"Bastone", icon:"stick", color:"#9c6b3f" } };
+// I bastoni si fabbricano ovunque (ricetta base)
+RECIPES.push({ name:"Bastoni", in:{[PLANKS]:2}, out:{[STICK]:4} });
+
+const TOOL_TIERS=[
+  { name:"Legno",    mat:PLANKS,  color:"#9c6b3f", mine:2.5, dmg:5  },
+  { name:"Pietra",   mat:COBBLE,  color:"#9a9a9a", mine:4,   dmg:7  },
+  { name:"Ferro",    mat:IRON,    color:"#d8d8d8", mine:6,   dmg:10 },
+  { name:"Oro",      mat:GOLD,    color:"#f4d03f", mine:7,   dmg:8  },
+  { name:"Diamante", mat:DIAMOND, color:"#6fe7e7", mine:9,   dmg:15 },
+];
+const TOOL_TYPES=[
+  { name:"Spada",   key:"sword",  cat:"combat" },
+  { name:"Piccone", key:"pick",   cat:"pick"   },
+  { name:"Ascia",   key:"axe",    cat:"axe"    },
+  { name:"Pala",    key:"shovel", cat:"shovel" },
+];
+// Ricette attrezzi: richiedono il banco da lavoro
+const TOOL_RECIPES=[];
+TOOL_TIERS.forEach((tr,ti)=> TOOL_TYPES.forEach((ty,si)=>{
+  const id=110 + ti*10 + si;
+  ITEMS[id]={ name:`${ty.name} di ${tr.name}`, icon:ty.key, color:tr.color, cat:ty.cat, mine:tr.mine, dmg:tr.dmg, tier:ti };
+  const matN = ty.key==='sword'?2 : ty.key==='shovel'?1 : 3;
+  const stickN = ty.key==='sword'?1 : 2;
+  TOOL_RECIPES.push({ name:ITEMS[id].name, in:{[tr.mat]:matN,[STICK]:stickN}, out:{[id]:1} });
+}));
+
+const PICK_BLOCKS=[STONE,COBBLE,STONEBRICK,BRICK,COAL,IRON,GOLD,DIAMOND];
+const AXE_BLOCKS=[LOG,PLANKS,TABLE];
+const SHOVEL_BLOCKS=[DIRT,GRASS,SAND,GRAVEL,CLAY,SNOW];
+function nameOf(id){ return (BLOCKS[id]&&BLOCKS[id].name) || (ITEMS[id]&&ITEMS[id].name) || '?'; }
+function toolMatches(itemId, blockId){
+  const it=ITEMS[itemId]; if(!it) return false;
+  if(it.cat==='pick')   return PICK_BLOCKS.includes(blockId);
+  if(it.cat==='axe')    return AXE_BLOCKS.includes(blockId);
+  if(it.cat==='shovel') return SHOVEL_BLOCKS.includes(blockId);
+  return false;
+}
+
 /* ===================== Three setup ===================== */
 const canvas=document.getElementById('c');
 const renderer=new THREE.WebGLRenderer({canvas, antialias:true});
@@ -441,7 +482,7 @@ function editBlock(x,y,z,id){
 /* ===================== Inventario ===================== */
 function currentBlockId(){ return mode==='creative'?creativeHotbar[selSlot]:(survOrder[selSlot]!=null?survOrder[selSlot]:null); }
 function hasBlock(id){ return mode==='creative'||inv[id]>0; }
-function addBlock(id,n=1){ if(mode==='creative'||!BLOCKS[id])return; if(!inv[id]){inv[id]=0;survOrder.push(id);} inv[id]+=n; renderHotbar(); }
+function addBlock(id,n=1){ if(mode==='creative'||(!BLOCKS[id]&&!ITEMS[id]))return; if(!inv[id]){inv[id]=0;survOrder.push(id);} inv[id]+=n; renderHotbar(); }
 function consumeBlock(id,n=1){ if(mode==='creative'||!inv[id])return; inv[id]-=n;
   if(inv[id]<=0){ delete inv[id]; const i=survOrder.indexOf(id); if(i>=0) survOrder.splice(i,1);
     if(selSlot>=survOrder.length) selSlot=Math.max(0,survOrder.length-1);} renderHotbar(); }
@@ -728,15 +769,17 @@ const mobRaycaster=new THREE.Raycaster(); mobRaycaster.far=REACH;
 function forwardDir(){ return new THREE.Vector3(0,0,-1).applyEuler(camera.rotation).normalize(); }
 
 function creatureFromHit(o){ while(o){ if(o.userData && o.userData.creature) return o.userData.creature; o=o.parent; } return null; }
-function hitCreature(c){
+function hitCreature(c,dmg){
   c.hurtT=0.2;
   const dx=c.x-player.x, dz=c.z-player.z, d=Math.hypot(dx,dz)||1;
-  if(c.kind==='mob'){ c.hp-=6; c.x+=dx/d*0.4; c.z+=dz/d*0.4; c.vy=3; }
-  else { c.hp-=5; c.flee=3; c.hx=dx/d; c.hz=dz/d; c.vy=3.5;
+  if(c.kind==='mob'){ c.hp-=dmg; c.x+=dx/d*0.4; c.z+=dz/d*0.4; c.vy=3; }
+  else { c.hp-=dmg; c.flee=3; c.hx=dx/d; c.hz=dz/d; c.vy=3.5;
     if(c.hp<=0){ if(mode==='survival' && c.drop) addBlock(c.drop); scene.remove(c.mesh);
       const i=animals.indexOf(c); if(i>=0) animals.splice(i,1); } }
 }
 function doLeft(){
+  const sel=currentBlockId();
+  const tool=ITEMS[sel];
   // attacca la creatura (mostro o animale) nel mirino
   const dir=forwardDir();
   mobRaycaster.set(camera.position, dir);
@@ -747,13 +790,23 @@ function doLeft(){
   const voxDist=vox?Math.hypot(vox.x+0.5-player.x,(vox.y+0.5)-(player.y+EYE),vox.z+0.5-player.z):Infinity;
   if(cDist<=REACH && cDist<voxDist && player.attackT<=0){
     const cre=creatureFromHit(hits[0].object);
-    if(cre){ player.attackT=0.35; hitCreature(cre); return; }
+    if(cre){ const dmg=(tool&&tool.cat==='combat')?tool.dmg:4; player.attackT=0.35; hitCreature(cre,dmg);
+             mineCD=mode==='creative'?0.12:0.3; return; }
   }
-  if(vox && vox.id===TNT){ igniteTNT(vox.x,vox.y,vox.z,2.6); return; }
+  if(vox && vox.id===TNT){ igniteTNT(vox.x,vox.y,vox.z,2.6); mineCD=0.3; return; }
   if(vox && vox.id!==BEDROCK){
     editBlock(vox.x,vox.y,vox.z,AIR);
-    if(mode==='survival') addBlock(dropOf(vox.id));
+    if(mode==='survival'){
+      const needsPick=PICK_BLOCKS.includes(vox.id);
+      const hasPick = tool && tool.cat==='pick';
+      if(!needsPick || hasPick) addBlock(dropOf(vox.id));   // pietra/minerali: serve il piccone per il drop
+    }
+    const base=mode==='creative'?0.12:0.24;
+    const mult=toolMatches(sel,vox.id)?tool.mine:1;
+    mineCD=base/mult;
+    return;
   }
+  mineCD=mode==='creative'?0.12:0.24;
 }
 function doRight(){
   const vox=raycastVoxel();
@@ -761,7 +814,7 @@ function doRight(){
   const px=vox.x+vox.nx, py=vox.y+vox.ny, pz=vox.z+vox.nz;
   if(getBlock(px,py,pz)!==AIR) return;
   const id=currentBlockId();
-  if(id==null||!hasBlock(id)) return;
+  if(id==null||!hasBlock(id)||!BLOCKS[id]) return;   // gli attrezzi non si posizionano
   // non costruire dentro il giocatore
   if(isSolid(id)){
     const overlapX=px+0.5>player.x-PW-0.5 && px+0.5<player.x+PW+0.5;
@@ -818,6 +871,29 @@ function drawCubeIcon(id,size){
   g.beginPath(); g.moveTo(ox+w,s*0.12+hh); g.lineTo(ox,s*0.12+2*hh); g.lineTo(ox,s*0.86); g.lineTo(ox+w,s*0.66); g.closePath(); g.fill();
   return c;
 }
+function drawToolIcon(id,size){
+  const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); const s=size;
+  const it=ITEMS[id]||{icon:'stick',color:'#9c6b3f'}, col=it.color||'#ccc';
+  // manico di legno (diagonale)
+  g.strokeStyle='#7a5230'; g.lineWidth=Math.max(3,s*0.1); g.lineCap='round';
+  g.beginPath(); g.moveTo(s*0.3,s*0.82); g.lineTo(s*0.6,s*0.42); g.stroke();
+  g.fillStyle=col; g.strokeStyle='rgba(0,0,0,0.35)'; g.lineWidth=1;
+  if(it.icon==='stick'){ return c; }
+  if(it.icon==='sword'){
+    g.save(); g.translate(s*0.6,s*0.4); g.rotate(-Math.PI/4);
+    g.fillRect(-s*0.055,-s*0.34,s*0.11,s*0.42); g.strokeRect(-s*0.055,-s*0.34,s*0.11,s*0.42);
+    g.fillStyle='#7a5230'; g.fillRect(-s*0.15,s*0.04,s*0.3,s*0.06); g.restore();
+  } else if(it.icon==='pick'){
+    g.lineWidth=Math.max(3,s*0.09); g.strokeStyle=col;
+    g.beginPath(); g.moveTo(s*0.4,s*0.34); g.quadraticCurveTo(s*0.6,s*0.18,s*0.8,s*0.34); g.stroke();
+  } else if(it.icon==='axe'){
+    g.beginPath(); g.moveTo(s*0.58,s*0.22); g.lineTo(s*0.8,s*0.34); g.lineTo(s*0.74,s*0.54); g.lineTo(s*0.55,s*0.4); g.closePath(); g.fill(); g.stroke();
+  } else if(it.icon==='shovel'){
+    g.beginPath(); g.ellipse(s*0.62,s*0.34,s*0.12,s*0.16,0,0,7); g.fill(); g.stroke();
+  }
+  return c;
+}
+function iconFor(id,size){ return (id>=100)?drawToolIcon(id,size):drawCubeIcon(id,size); }
 function renderHotbar(){
   const bar=document.getElementById('hotbar'); bar.innerHTML='';
   if(mode==='creative'){ creativeHotbar.forEach((id,i)=>bar.appendChild(makeSlot(id,null,i,i<9?i+1:null))); }
@@ -829,7 +905,7 @@ function renderHotbar(){
 }
 function makeSlot(id,count,i,key){
   const d=document.createElement('div'); d.className='slot'+(i===selSlot?' sel':'');
-  d.title=BLOCKS[id]?BLOCKS[id].name:''; d.appendChild(drawCubeIcon(id,44));
+  d.title=nameOf(id); d.appendChild(iconFor(id,44));
   if(key){ const k=document.createElement('div'); k.className='key'; k.textContent=key; d.appendChild(k); }
   if(count!=null){ const c=document.createElement('div'); c.className='count'; c.textContent=count; d.appendChild(c); }
   d.addEventListener('click',()=>{ selSlot=i; renderHotbar(); });
@@ -842,33 +918,50 @@ function openPanel(){
   panelOpen=true; document.exitPointerLock?.();
   const body=document.getElementById('panelBody'), title=document.getElementById('panelTitle');
   if(mode==='creative'){
-    title.textContent='Blocchi (clic = mettilo nello slot selezionato)';
+    title.textContent='Blocchi e attrezzi (clic = nello slot selezionato)';
     const grid=document.createElement('div'); grid.className='blockgrid';
-    PALETTE.forEach(id=>{ const cell=document.createElement('div'); cell.className='gcell';
-      cell.appendChild(drawCubeIcon(id,40)); const sp=document.createElement('span'); sp.textContent=BLOCKS[id].name;
-      cell.appendChild(sp); cell.addEventListener('click',()=>{ creativeHotbar[selSlot]=id; renderHotbar(); }); grid.appendChild(cell); });
+    const addCell=(id)=>{ const cell=document.createElement('div'); cell.className='gcell';
+      cell.appendChild(iconFor(id,40)); const sp=document.createElement('span'); sp.textContent=nameOf(id);
+      cell.appendChild(sp); cell.addEventListener('click',()=>{ creativeHotbar[selSlot]=id; renderHotbar(); }); grid.appendChild(cell); };
+    PALETTE.forEach(addCell);
+    Object.keys(ITEMS).map(Number).forEach(addCell);
     body.innerHTML=''; body.appendChild(grid);
   } else {
     title.textContent='Crafting'; body.innerHTML='';
-    const note=document.createElement('p'); note.style.cssText='text-align:center;opacity:.7;font-size:.85rem;margin-bottom:14px';
-    note.textContent='Fabbrica oggetti con le risorse raccolte.'; body.appendChild(note);
-    RECIPES.forEach(r=>{
+    const near=nearTable();
+    const renderRecipe=(r)=>{
       const can=Object.entries(r.in).every(([k,v])=>(inv[k]||0)>=v);
       const row=document.createElement('div'); row.className='recipe '+(can?'can':'cant');
-      const ins=Object.entries(r.in).map(([k,v])=>`${v}× ${BLOCKS[k].name}`).join(' + ');
-      const outs=Object.entries(r.out).map(([k,v])=>`${v}× ${BLOCKS[k].name}`).join(', ');
+      const ins=Object.entries(r.in).map(([k,v])=>`${v}× ${nameOf(k)}`).join(' + ');
+      const outs=Object.entries(r.out).map(([k,v])=>`${v}× ${nameOf(k)}`).join(', ');
       row.innerHTML=`<div class="rname">${r.name}<div class="rio">${ins} → ${outs}</div></div>`;
       const btn=document.createElement('button'); btn.className='btn'; btn.textContent='Crea'; btn.disabled=!can;
       if(!can){ btn.style.opacity=.5; btn.style.cursor='not-allowed'; }
       btn.addEventListener('click',()=>{ craft(r); openPanel(); }); row.appendChild(btn); body.appendChild(row);
-    });
+    };
+    const note=document.createElement('p'); note.style.cssText='text-align:center;opacity:.7;font-size:.85rem;margin-bottom:14px';
+    note.textContent='Fabbrica oggetti con le risorse raccolte.'; body.appendChild(note);
+    RECIPES.forEach(renderRecipe);
+    const h=document.createElement('h3'); h.style.cssText='margin:16px 0 8px;text-align:center;font-size:1rem;';
+    h.textContent=near?'🛠️ Attrezzi (banco da lavoro)':'🛠️ Attrezzi — avvicinati a un banco da lavoro';
+    body.appendChild(h);
+    if(near){ TOOL_RECIPES.forEach(renderRecipe); }
+    else { const p=document.createElement('p'); p.style.cssText='text-align:center;opacity:.6;font-size:.82rem;';
+      p.textContent='Posiziona un banco da lavoro e mettiti vicino per fabbricare spade, picconi, asce e pale.'; body.appendChild(p); }
   }
   document.getElementById('panel').classList.remove('hidden');
+}
+// C'è un banco da lavoro entro pochi blocchi dal giocatore?
+function nearTable(){
+  const px=Math.floor(player.x), py=Math.floor(player.y), pz=Math.floor(player.z);
+  for(let dy=-2;dy<=2;dy++)for(let dz=-4;dz<=4;dz++)for(let dx=-4;dx<=4;dx++)
+    if(getBlock(px+dx,py+dy,pz+dz)===TABLE) return true;
+  return false;
 }
 function closePanel(){ panelOpen=false; document.getElementById('panel').classList.add('hidden'); }
 function craft(r){ if(!Object.entries(r.in).every(([k,v])=>(inv[k]||0)>=v))return;
   Object.entries(r.in).forEach(([k,v])=>consumeBlock(+k,v)); Object.entries(r.out).forEach(([k,v])=>addBlock(+k,v));
-  toast('Fabbricato: '+Object.entries(r.out).map(([k,v])=>`${v}× ${BLOCKS[k].name}`).join(', ')); }
+  toast('Fabbricato: '+Object.entries(r.out).map(([k,v])=>`${v}× ${nameOf(k)}`).join(', ')); }
 let toastT; function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1600); }
 
@@ -885,7 +978,7 @@ function loop(ts){
     updateMobs(dt,night);
     updateAnimals(dt);
     updateTNT(dt);
-    if(leftDown && mineCD<=0){ doLeft(); mineCD=mode==='creative'?0.12:0.24; }
+    if(leftDown && mineCD<=0){ doLeft(); }
     if(rightDown && placeCD<=0){ doRight(); placeCD=0.18; }
     if(mineCD>0)mineCD-=dt; if(placeCD>0)placeCD-=dt;
     // evidenzia blocco
@@ -989,7 +1082,7 @@ canvas.addEventListener('mousedown',e=>{
   if(isTouch || !running || panelOpen || paused) return;
   e.preventDefault();
   dragBtn=e.button; dragging=false; dragDownX=dragLX=e.clientX; dragDownY=dragLY=e.clientY;
-  if(e.button===0){ leftDown=true; doLeft(); mineCD=mode==='creative'?0.12:0.24; }
+  if(e.button===0){ leftDown=true; doLeft(); }
   if(e.button===2){ rightDown=true; doRight(); placeCD=0.18; }
 });
 window.addEventListener('mouseup',e=>{
