@@ -400,8 +400,27 @@ function genWorld(){
       }
     }
   }
-  // spawn al centro, sopra la superficie
-  const sx=WX>>1, sz=WZ>>1; let sy=WY-1;
+  // laghetto con spiaggetta al centro del mondo
+  const lcx=WX>>1, lcz=WZ>>1, waterY=hmap[lcx+lcz*WX];
+  const lakeR=7, beachR=lakeR+3;
+  for(let dz=-beachR;dz<=beachR;dz++) for(let dx=-beachR;dx<=beachR;dx++){
+    const d=Math.hypot(dx,dz); if(d>beachR+0.5) continue;
+    const x=lcx+dx, z=lcz+dz; if(x<1||x>=WX-1||z<1||z>=WZ-1) continue;
+    for(let y=WY-1;y>waterY;y--) setBlockRaw(x,y,z,AIR);   // togli alberi/dossi sopra il livello dell'acqua
+    if(d<=lakeR){
+      const bed=waterY-2-Math.round((1-d/lakeR)*3);        // conca: più profonda al centro
+      for(let y=waterY;y>bed;y--) setBlockRaw(x,y,z,WATER);
+      setBlockRaw(x,bed,z,SAND);
+      for(let y=bed-1;y>=0;y--){ if(getBlock(x,y,z)===AIR) setBlockRaw(x,y,z,DIRT); }
+    } else {
+      setBlockRaw(x,waterY,z,SAND); if(waterY-1>=0) setBlockRaw(x,waterY-1,z,SAND);   // spiaggia di sabbia
+      for(let y=waterY-2;y>=0;y--){ if(getBlock(x,y,z)===AIR) setBlockRaw(x,y,z,DIRT); }
+    }
+    hmap[x+z*WX]=waterY;
+  }
+
+  // spawn sulla spiaggia, accanto al laghetto
+  const sx=lcx, sz=lcz+lakeR+1; let sy=WY-1;
   while(sy>0 && getBlock(sx,sy,sz)===AIR) sy--;
   player.x=sx+0.5; player.y=sy+1; player.z=sz+0.5;
   player.vx=player.vy=player.vz=0; player.flying=false;
@@ -874,16 +893,52 @@ function drawCubeIcon(id,size){
 function drawToolIcon(id,size){
   const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); const s=size;
   const it=ITEMS[id]||{icon:'stick',color:'#9c6b3f'}, col=it.color||'#ccc';
-  // manico di legno (diagonale)
+
+  if(it.icon==='stick'){
+    g.strokeStyle='#9c6b3f'; g.lineWidth=Math.max(3,s*0.1); g.lineCap='round';
+    g.beginPath(); g.moveTo(s*0.34,s*0.82); g.lineTo(s*0.66,s*0.2); g.stroke();
+    return c;
+  }
+
+  if(it.icon==='sword'){
+    // spada realistica: lama affusolata, elsa, impugnatura, pomo — orientata in diagonale
+    g.save(); g.translate(s*0.5,s*0.52); g.rotate(-Math.PI/4);
+    const bw=s*0.12, gY=s*0.04, bl=s*0.56;
+    // lama (punta in alto)
+    g.beginPath();
+    g.moveTo(-bw/2,gY); g.lineTo(-bw/2,gY-bl*0.82); g.lineTo(0,gY-bl);
+    g.lineTo(bw/2,gY-bl*0.82); g.lineTo(bw/2,gY); g.closePath();
+    g.fillStyle=col; g.fill();
+    // mezzo lato più chiaro (riflesso) e mezzo più scuro
+    g.beginPath();
+    g.moveTo(0,gY); g.lineTo(0,gY-bl); g.lineTo(bw/2,gY-bl*0.82); g.lineTo(bw/2,gY); g.closePath();
+    g.fillStyle='rgba(0,0,0,0.18)'; g.fill();
+    g.beginPath();
+    g.moveTo(-bw/2,gY); g.lineTo(-bw/2,gY-bl*0.82); g.lineTo(0,gY-bl); g.lineTo(0,gY); g.closePath();
+    g.fillStyle='rgba(255,255,255,0.35)'; g.fill();
+    // scanalatura centrale
+    g.strokeStyle='rgba(0,0,0,0.30)'; g.lineWidth=Math.max(1,s*0.018);
+    g.beginPath(); g.moveTo(0,gY-bl*0.92); g.lineTo(0,gY-s*0.02); g.stroke();
+    // elsa (guardia) in ottone
+    g.fillStyle='#caa53a'; g.strokeStyle='rgba(0,0,0,0.35)'; g.lineWidth=1;
+    g.fillRect(-s*0.17,gY,s*0.34,s*0.055); g.strokeRect(-s*0.17,gY,s*0.34,s*0.055);
+    // impugnatura in cuoio
+    g.fillStyle='#5a3b22';
+    g.fillRect(-s*0.035,gY+s*0.055,s*0.07,s*0.17);
+    g.strokeStyle='rgba(0,0,0,0.35)';
+    for(let i=0;i<3;i++){ const yy=gY+s*0.085+i*s*0.05; g.beginPath(); g.moveTo(-s*0.035,yy); g.lineTo(s*0.035,yy); g.stroke(); }
+    // pomo
+    g.fillStyle='#caa53a';
+    g.beginPath(); g.arc(0,gY+s*0.055+s*0.17+s*0.025,s*0.045,0,7); g.fill(); g.stroke();
+    g.restore();
+    return c;
+  }
+
+  // manico di legno (diagonale) per piccone/ascia/pala
   g.strokeStyle='#7a5230'; g.lineWidth=Math.max(3,s*0.1); g.lineCap='round';
   g.beginPath(); g.moveTo(s*0.3,s*0.82); g.lineTo(s*0.6,s*0.42); g.stroke();
   g.fillStyle=col; g.strokeStyle='rgba(0,0,0,0.35)'; g.lineWidth=1;
-  if(it.icon==='stick'){ return c; }
-  if(it.icon==='sword'){
-    g.save(); g.translate(s*0.6,s*0.4); g.rotate(-Math.PI/4);
-    g.fillRect(-s*0.055,-s*0.34,s*0.11,s*0.42); g.strokeRect(-s*0.055,-s*0.34,s*0.11,s*0.42);
-    g.fillStyle='#7a5230'; g.fillRect(-s*0.15,s*0.04,s*0.3,s*0.06); g.restore();
-  } else if(it.icon==='pick'){
+  if(it.icon==='pick'){
     g.lineWidth=Math.max(3,s*0.09); g.strokeStyle=col;
     g.beginPath(); g.moveTo(s*0.4,s*0.34); g.quadraticCurveTo(s*0.6,s*0.18,s*0.8,s*0.34); g.stroke();
   } else if(it.icon==='axe'){
