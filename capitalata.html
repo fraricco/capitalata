@@ -69,6 +69,8 @@
   button:hover:not(:disabled) { background: #ffc46b; transform: translateY(-2px); }
   button:disabled { opacity: 0.6; cursor: not-allowed; }
   .player-inputs { display: grid; gap: 10px; margin-top: 12px; }
+  .name-row { display: flex; align-items: center; gap: 10px; }
+  .name-row input { flex: 1; }
   .difficulty {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -150,7 +152,17 @@
     padding: 4px 0;
     font-size: 0.95rem;
   }
-  .score-row.active { color: #ffb347; font-weight: 700; }
+  .score-row { border-radius: 6px; padding-left: 6px; padding-right: 6px; }
+  .score-row.active { font-weight: 700; }
+  .player-name { display: flex; align-items: center; gap: 8px; }
+  .player-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
+  }
   .progress {
     text-align: center;
     margin-bottom: 16px;
@@ -388,6 +400,16 @@ const CAPITALS = [
   { country: "Bolivia", capital: "Sucre", level: 3 }
 ];
 
+// Colori distinti per ogni giocatore (max 6), leggibili sullo sfondo scuro.
+const PLAYER_COLORS = [
+  '#e74c3c', // rosso
+  '#3498db', // blu
+  '#2ecc71', // verde
+  '#f1c40f', // giallo
+  '#9b59b6', // viola
+  '#e67e22'  // arancione
+];
+
 const state = {
   players: [],
   difficulty: 1,
@@ -458,11 +480,19 @@ $('confirmCount').addEventListener('click', () => {
   const container = $('nameInputs');
   container.innerHTML = '';
   for (let i = 0; i < n; i++) {
+    const color = PLAYER_COLORS[i % PLAYER_COLORS.length];
+    const row = document.createElement('div');
+    row.className = 'name-row';
+    const dot = document.createElement('span');
+    dot.className = 'player-dot';
+    dot.style.background = color;
     const input = document.createElement('input');
     input.type = 'text';
     input.placeholder = `Nome giocatore ${i + 1}`;
     input.value = `Giocatore ${i + 1}`;
-    container.appendChild(input);
+    row.appendChild(dot);
+    row.appendChild(input);
+    container.appendChild(row);
   }
   showScreen('names');
 });
@@ -471,7 +501,8 @@ $('startGame').addEventListener('click', () => {
   const inputs = $('nameInputs').querySelectorAll('input');
   state.players = Array.from(inputs).map((inp, i) => ({
     name: inp.value.trim() || `Giocatore ${i + 1}`,
-    score: 0
+    score: 0,
+    color: PLAYER_COLORS[i % PLAYER_COLORS.length]
   }));
 
   // Estrai N domande UNICHE dall'intero pool, poi assegnale a turni.
@@ -503,9 +534,16 @@ function renderScoreboard(activePlayerIdx) {
   list.innerHTML = '';
   state.players.forEach((p, i) => {
     const row = document.createElement('div');
-    row.className = 'score-row' + (i === activePlayerIdx ? ' active' : '');
-    row.innerHTML = `<span>${p.name}</span><span>turno</span>`;
-    if (i !== activePlayerIdx) row.querySelector('span:last-child').textContent = '';
+    const isActive = i === activePlayerIdx;
+    row.className = 'score-row' + (isActive ? ' active' : '');
+    row.innerHTML =
+      `<span class="player-name">` +
+        `<span class="player-dot" style="background:${p.color}"></span>${p.name}` +
+      `</span><span>${isActive ? 'turno' : ''}</span>`;
+    if (isActive) {
+      row.style.color = p.color;
+      row.style.background = `${p.color}26`; // colore con bassa opacità
+    }
     list.appendChild(row);
   });
 }
@@ -514,8 +552,13 @@ function renderQuestion() {
   state.selectedOption = null;
   const q = state.questions[state.currentIndex];
   renderScoreboard(q.playerIndex);
+  const activePlayer = state.players[q.playerIndex];
   $('progress').textContent = `Domanda ${state.currentIndex + 1} di ${state.questions.length}`;
-  $('turnBanner').textContent = `Turno di ${state.players[q.playerIndex].name}`;
+  const banner = $('turnBanner');
+  banner.textContent = `Turno di ${activePlayer.name}`;
+  banner.style.background = `${activePlayer.color}33`;
+  banner.style.borderLeftColor = activePlayer.color;
+  banner.style.color = activePlayer.color;
   $('question').textContent = `Qual è la capitale di ${q.country}?`;
   $('feedback').textContent = 'Le risposte corrette saranno svelate alla fine della partita.';
   $('nextBtn').disabled = true;
@@ -571,7 +614,10 @@ function finalizeAndShowResults() {
   ranking.innerHTML = '';
   sorted.forEach((p, i) => {
     const li = document.createElement('li');
-    li.innerHTML = `<span>${i + 1}. ${p.name}</span><span>${p.score} pt</span>`;
+    li.innerHTML =
+      `<span class="player-name">${i + 1}. ` +
+        `<span class="player-dot" style="background:${p.color}"></span>${p.name}` +
+      `</span><span>${p.score} pt</span>`;
     ranking.appendChild(li);
   });
 
@@ -580,7 +626,9 @@ function finalizeAndShowResults() {
   recap.innerHTML = '';
   state.players.forEach((p, i) => {
     const section = document.createElement('div');
-    section.innerHTML = `<h3>${p.name} — ${p.score} pt</h3>`;
+    section.innerHTML =
+      `<h3><span class="player-dot" style="background:${p.color};margin-right:8px"></span>` +
+      `${p.name} — ${p.score} pt</h3>`;
     state.questions
       .filter(q => q.playerIndex === i)
       .forEach((q, n) => {
