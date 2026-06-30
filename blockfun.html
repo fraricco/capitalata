@@ -957,6 +957,9 @@ function renderHotbar(){
       d.style.padding='0 14px'; d.style.fontSize='.75rem'; d.textContent='Scava per raccogliere…'; bar.appendChild(d); return; }
     survOrder.forEach((id,i)=>bar.appendChild(makeSlot(id,inv[id],i,i<9?i+1:null)));
   }
+  // porta lo slot selezionato sempre in vista (barra scorrevole)
+  const sel=bar.querySelector('.slot.sel');
+  if(sel) bar.scrollLeft = sel.offsetLeft - bar.clientWidth/2 + sel.offsetWidth/2;
 }
 function makeSlot(id,count,i,key){
   const d=document.createElement('div'); d.className='slot'+(i===selSlot?' sel':'');
@@ -1145,10 +1148,18 @@ window.addEventListener('mouseup',e=>{
   if(e.button===dragBtn){ dragBtn=-1; dragging=false; canvas.style.cursor='grab'; }
 });
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
+function cycleSlot(dir){
+  const max=mode==='creative'?creativeHotbar.length:Math.max(1,survOrder.length);
+  selSlot=(selSlot+dir+max)%max; renderHotbar();
+}
 canvas.addEventListener('wheel',e=>{
   if(isTouch || !running || panelOpen || paused) return; e.preventDefault();
-  const max=mode==='creative'?creativeHotbar.length:Math.max(1,survOrder.length);
-  selSlot=(selSlot+(e.deltaY>0?1:-1)+max)%max; renderHotbar();
+  cycleSlot(e.deltaY>0?1:-1);
+},{passive:false});
+// scorri l'inventario anche con la rotellina sopra la barra
+document.getElementById('hotbar').addEventListener('wheel',e=>{
+  if(!running || panelOpen || paused) return; e.preventDefault();
+  cycleSlot(e.deltaY>0?1:-1);
 },{passive:false});
 
 document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>startGame(b.dataset.mode)));
