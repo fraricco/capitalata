@@ -318,6 +318,10 @@ const hl=new THREE.LineSegments(
   new THREE.EdgesGeometry(new THREE.BoxGeometry(1.002,1.002,1.002)),
   new THREE.LineBasicMaterial({color:0x000000}));
 hl.visible=false; scene.add(hl);
+// riquadro di avanzamento rottura (si scurisce mentre scavi)
+const breakBox=new THREE.Mesh(new THREE.BoxGeometry(1.02,1.02,1.02),
+  new THREE.MeshBasicMaterial({color:0x000000, transparent:true, opacity:0.3, depthWrite:false}));
+breakBox.visible=false; scene.add(breakBox);
 
 function resize(){
   const w=window.innerWidth,h=window.innerHeight;
@@ -796,36 +800,73 @@ function hitCreature(c,dmg){
     if(c.hp<=0){ if(mode==='survival' && c.drop) addBlock(c.drop); scene.remove(c.mesh);
       const i=animals.indexOf(c); if(i>=0) animals.splice(i,1); } }
 }
-function doLeft(){
-  const sel=currentBlockId();
-  const tool=ITEMS[sel];
-  // attacca la creatura (mostro o animale) nel mirino
-  const dir=forwardDir();
-  mobRaycaster.set(camera.position, dir);
-  const roots=[]; for(const m of mobs) roots.push(m.mesh); for(const a of animals) roots.push(a.mesh);
-  const hits=mobRaycaster.intersectObjects(roots, true);
-  const vox=raycastVoxel();
-  const cDist=hits.length?hits[0].distance:Infinity;
-  const voxDist=vox?Math.hypot(vox.x+0.5-player.x,(vox.y+0.5)-(player.y+EYE),vox.z+0.5-player.z):Infinity;
-  if(cDist<=REACH && cDist<voxDist && player.attackT<=0){
-    const cre=creatureFromHit(hits[0].object);
-    if(cre){ const dmg=(tool&&tool.cat==='combat')?tool.dmg:4; player.attackT=0.35; hitCreature(cre,dmg);
-             mineCD=mode==='creative'?0.12:0.3; return; }
+// Durezza dei blocchi (secondi a mani nude). La velocità reale dipende dall'attrezzo.
+const HARDNESS={
+  [GRASS]:0.5,[DIRT]:0.5,[SAND]:0.5,[GRAVEL]:0.6,[CLAY]:0.6,[SNOW]:0.4,
+  [LOG]:1.4,[PLANKS]:1.4,[TABLE]:1.4,[LEAVES]:0.25,[CACTUS]:0.5,[GLASS]:0.35,
+  [STONE]:2.2,[COBBLE]:2.2,[STONEBRICK]:2.6,[BRICK]:2.6,
+  [COAL]:3,[IRON]:3.2,[GOLD]:3.2,[DIAMOND]:3.6,
+  [WHITE]:0.8,[RED]:0.8,[ORANGE]:0.8,[YELLOW]:0.8,[GREEN]:0.8,[BLUE]:0.8,[CYAN]:0.8,[PURPLE]:0.8,[PINK]:0.8,[BLACK]:0.8,
+};
+function hardnessOf(id){ return HARDNESS[id]!=null?HARDNESS[id]:1; }
+
+let mineKey=null, mineProg=0;
+function resetMining(){ mineKey=null; mineProg=0; breakBox.visible=false; }
+function breakBlock(vox,tool){
+  editBlock(vox.x,vox.y,vox.z,AIR);
+  if(mode==='survival'){
+    const needsPick=PICK_BLOCKS.includes(vox.id);
+    const hasPick=tool&&tool.cat==='pick';
+    if(!needsPick||hasPick) addBlock(dropOf(vox.id));   // pietra/minerali: serve il piccone per il drop
   }
-  if(vox && vox.id===TNT){ igniteTNT(vox.x,vox.y,vox.z,2.6); mineCD=0.3; return; }
-  if(vox && vox.id!==BEDROCK){
-    editBlock(vox.x,vox.y,vox.z,AIR);
-    if(mode==='survival'){
-      const needsPick=PICK_BLOCKS.includes(vox.id);
-      const hasPick = tool && tool.cat==='pick';
-      if(!needsPick || hasPick) addBlock(dropOf(vox.id));   // pietra/minerali: serve il piccone per il drop
-    }
-    const base=mode==='creative'?0.12:0.24;
-    const mult=toolMatches(sel,vox.id)?tool.mine:1;
-    mineCD=base/mult;
+}
+// Clic/tocco singolo: attacca una creatura o innesca la TNT (azioni istantanee)
+function doPrimaryClick(){
+  const vox=raycastVoxel();
+  mobRaycaster.set(camera.position, forwardDir());
+  const roots=[]; for(const m of mobs) roots.push(m.mesh); for(const a of animals) roots.push(a.mesh);
+  const chits=mobRaycaster.intersectObjects(roots,true);
+  const cDist=chits.length?chits[0].distance:Infinity;
+  const voxDist=vox?Math.hypot(vox.x+0.5-player.x,(vox.y+0.5)-(player.y+EYE),vox.z+0.5-player.z):Infinity;
+  if(cDist<=REACH && cDist<voxDist){
+    if(player.attackT<=0){ const cre=creatureFromHit(chits[0].object);
+      if(cre){ const sel=currentBlockId(),tool=ITEMS[sel]; const dmg=(tool&&tool.cat==='combat')?tool.dmg:4; player.attackT=0.4; hitCreature(cre,dmg); } }
     return;
   }
-  mineCD=mode==='creative'?0.12:0.24;
+  if(vox && vox.id===TNT){ igniteTNT(vox.x,vox.y,vox.z,2.6); }
+}
+// Tieni premuto per scavare: rottura progressiva in base a durezza e attrezzo
+function updateMining(dt){
+  const vox=raycastVoxel();
+  if(vox){ hl.visible=true; hl.position.set(vox.x+0.5,vox.y+0.5,vox.z+0.5); } else hl.visible=false;
+
+  if(!leftDown){ resetMining(); return; }
+
+  // se il mirino è su una creatura: attacca (non scavare)
+  mobRaycaster.set(camera.position, forwardDir());
+  const roots=[]; for(const m of mobs) roots.push(m.mesh); for(const a of animals) roots.push(a.mesh);
+  const chits=mobRaycaster.intersectObjects(roots,true);
+  const cDist=chits.length?chits[0].distance:Infinity;
+  const voxDist=vox?Math.hypot(vox.x+0.5-player.x,(vox.y+0.5)-(player.y+EYE),vox.z+0.5-player.z):Infinity;
+  if(cDist<=REACH && cDist<voxDist){ resetMining();
+    if(player.attackT<=0){ const cre=creatureFromHit(chits[0].object);
+      if(cre){ const sel=currentBlockId(),tool=ITEMS[sel]; const dmg=(tool&&tool.cat==='combat')?tool.dmg:4; player.attackT=0.4; hitCreature(cre,dmg); } }
+    return;
+  }
+  if(!vox || vox.id===BEDROCK){ resetMining(); return; }
+  if(vox.id===TNT){ igniteTNT(vox.x,vox.y,vox.z,2.6); resetMining(); return; }
+
+  const key=vox.x+','+vox.y+','+vox.z;
+  if(key!==mineKey){ mineKey=key; mineProg=0; }
+  const sel=currentBlockId(), tool=ITEMS[sel];
+  const mult=toolMatches(sel,vox.id)?tool.mine:1;
+  const req = mode==='creative' ? 0.05 : Math.max(0.08, hardnessOf(vox.id)/mult);
+  mineProg+=dt;
+  // riquadro di avanzamento che scurisce man mano
+  const p=Math.min(1,mineProg/req);
+  breakBox.visible=true; breakBox.position.set(vox.x+0.5,vox.y+0.5,vox.z+0.5);
+  breakBox.material.opacity=0.12+p*0.5;
+  if(mineProg>=req){ breakBlock(vox,tool); mineKey=null; mineProg=0; breakBox.visible=false; }
 }
 function doRight(){
   const vox=raycastVoxel();
@@ -1036,13 +1077,10 @@ function loop(ts){
     updateMobs(dt,night);
     updateAnimals(dt);
     updateTNT(dt);
-    if(leftDown && mineCD<=0){ doLeft(); }
+    updateMining(dt);
     if(rightDown && placeCD<=0){ doRight(); placeCD=0.18; }
-    if(mineCD>0)mineCD-=dt; if(placeCD>0)placeCD-=dt;
-    // evidenzia blocco
-    const vox=raycastVoxel();
-    if(vox){ hl.visible=true; hl.position.set(vox.x+0.5,vox.y+0.5,vox.z+0.5); } else hl.visible=false;
-  } else { camera.position.set(player.x,player.y+EYE,player.z); camera.rotation.set(pitch,yaw,0); }
+    if(placeCD>0)placeCD-=dt;
+  } else { camera.position.set(player.x,player.y+EYE,player.z); camera.rotation.set(pitch,yaw,0); hl.visible=false; breakBox.visible=false; }
   updateSky();
   hudT-=dt; if(hudT<=0){ renderClock(); hudT=0.25; }
   renderer.render(scene,camera);
@@ -1140,7 +1178,7 @@ canvas.addEventListener('mousedown',e=>{
   if(isTouch || !running || panelOpen || paused) return;
   e.preventDefault();
   dragBtn=e.button; dragging=false; dragDownX=dragLX=e.clientX; dragDownY=dragLY=e.clientY;
-  if(e.button===0){ leftDown=true; doLeft(); }
+  if(e.button===0){ leftDown=true; doPrimaryClick(); }
   if(e.button===2){ rightDown=true; doRight(); placeCD=0.18; }
 });
 window.addEventListener('mouseup',e=>{
@@ -1200,7 +1238,7 @@ if(isTouch){
     el.addEventListener('touchstart',e=>{ e.preventDefault(); down&&down(); },{passive:false});
     el.addEventListener('touchend',e=>{ e.preventDefault(); up&&up(); },{passive:false});
     el.addEventListener('touchcancel',()=>{ up&&up(); }); };
-  bind('tbMine',()=>{ leftDown=true; },()=>{ leftDown=false; });
+  bind('tbMine',()=>{ leftDown=true; doPrimaryClick(); },()=>{ leftDown=false; });
   bind('tbPlace',()=>{ rightDown=true; doRight(); placeCD=0.18; },()=>{ rightDown=false; });
   bind('tbJump',()=>{ keys[' ']=true; },()=>{ keys[' ']=false; });
   bind('tbDown',()=>{ keys['shift']=true; },()=>{ keys['shift']=false; });
