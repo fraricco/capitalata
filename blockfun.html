@@ -316,8 +316,77 @@ scene.add(sun); scene.add(ambient); scene.add(hemi);
 const fog=new THREE.Fog(0x9ec9ff, 40, 120);
 scene.fog=fog;
 
-const chunkMat=new THREE.MeshLambertMaterial({ vertexColors:true, side:THREE.DoubleSide });
-const liquidMat=new THREE.MeshLambertMaterial({ vertexColors:true, transparent:true, opacity:0.7, side:THREE.DoubleSide, depthWrite:false });
+/* ===================== Atlante texture (pixel art, stile Minecraft) ===================== */
+const TS=16, COLS=16;
+const atlasCanvas=document.createElement('canvas'); atlasCanvas.width=atlasCanvas.height=TS*COLS;
+const BLOCKTILE={};
+(function buildAtlas(){
+  const g=atlasCanvas.getContext('2d'); g.imageSmoothingEnabled=false;
+  let next=0;
+  const hx=(hex)=>{const n=parseInt(hex.slice(1),16);return [n>>16&255,n>>8&255,n&255];};
+  const cl=(v)=>v<0?0:v>255?255:v|0;
+  const put=(ox,oy,x,y,r,gg,b,a)=>{ g.fillStyle='rgba('+cl(r)+','+cl(gg)+','+cl(b)+','+(a==null?1:a)+')'; g.fillRect(ox+x,oy+y,1,1); };
+  const noise=(ox,oy,hex,amp,a)=>{ const c=hx(hex); for(let y=0;y<TS;y++)for(let x=0;x<TS;x++){ const d=(Math.random()*2-1)*amp; put(ox,oy,x,y,c[0]+d,c[1]+d,c[2]+d,a); } };
+  function paint(id,kind,ox,oy){
+    const b=BLOCKS[id];
+    const base = kind==='top'?(b.top||b.all): kind==='bottom'?(b.bottom||b.all):(b.side||b.all);
+    const bc=hx(base);
+    const dark=(x,y,a)=>put(ox,oy,x,y,bc[0]-a,bc[1]-a,bc[2]-a,1);
+    const lite=(x,y,a)=>put(ox,oy,x,y,bc[0]+a,bc[1]+a,bc[2]+a,1);
+    if(id===GLASS){
+      g.clearRect(ox,oy,TS,TS); const f=hx('#cfeff7');
+      for(let i=0;i<TS;i++){ put(ox,oy,i,0,f[0],f[1],f[2],0.9); put(ox,oy,i,TS-1,f[0],f[1],f[2],0.9); put(ox,oy,0,i,f[0],f[1],f[2],0.9); put(ox,oy,TS-1,i,f[0],f[1],f[2],0.9); }
+      put(ox,oy,3,3,255,255,255,0.55); put(ox,oy,4,3,255,255,255,0.35); put(ox,oy,3,4,255,255,255,0.3);
+      put(ox,oy,11,9,255,255,255,0.45); put(ox,oy,11,10,255,255,255,0.3);
+      return;
+    }
+    if(id===WATER){ for(let y=0;y<TS;y++)for(let x=0;x<TS;x++){ const d=(Math.random()*2-1)*12; put(ox,oy,x,y,bc[0]+d,bc[1]+d,bc[2]+d,0.62);} return; }
+    const amp=(id===STONE||id===COBBLE)?20:(id===SAND||id===SNOW)?9:14;
+    noise(ox,oy,base,amp);
+    if(id===GRASS){
+      if(kind==='side'){ const gt=hx(b.top); for(let x=0;x<TS;x++){ const h=3+((Math.random()*2)|0); for(let y=0;y<h;y++){ const d=(Math.random()*2-1)*12; put(ox,oy,x,y,gt[0]+d,gt[1]+d,gt[2]+d,1);} } }
+      return;
+    }
+    if(id===LOG){
+      if(kind==='side'){ for(let x=0;x<TS;x++){ if(x%4===0||x%7===2) for(let y=0;y<TS;y++) dark(x,y,22);} }
+      else { for(let y=0;y<TS;y++)for(let x=0;x<TS;x++){ const dr=Math.round(Math.hypot(x-8,y-8)); if(dr%3===0) dark(x,y,20);} }
+      return;
+    }
+    if(id===PLANKS||id===TABLE){
+      for(let y=0;y<TS;y++) if(y%4===3) for(let x=0;x<TS;x++) dark(x,y,26);
+      for(let x=2;x<TS;x+=5) for(let y=0;y<TS;y++) if(Math.random()<0.5) dark(x,y,10);
+      if(id===TABLE&&kind==='top'){ for(let i=0;i<TS;i++){ dark(i,0,30);dark(i,TS-1,30);dark(0,i,30);dark(TS-1,i,30);dark(i,7,22);dark(8,i,22);} }
+      return;
+    }
+    if(id===BRICK){ for(let y=0;y<TS;y++)for(let x=0;x<TS;x++){ const row=(y/4)|0, off=row%2?2:0; if(y%4===0||((x+off)%8===0)) lite(x,y,-28);} return; }
+    if(id===STONEBRICK){ for(let y=0;y<TS;y++)for(let x=0;x<TS;x++){ const row=(y/8)|0, off=row%2?4:0; if(y%8===0||((x+off)%8===0)) dark(x,y,30);} return; }
+    if(id===COBBLE){ for(let i=0;i<12;i++){ const x=(Math.random()*TS)|0,y=(Math.random()*TS)|0; dark(x,y,22); dark((x+1)%TS,y,15); dark(x,(y+1)%TS,15);} return; }
+    if(id===COAL||id===IRON||id===GOLD||id===DIAMOND){
+      const ore=({[COAL]:'#1c1c1c',[IRON]:'#c9a07a',[GOLD]:'#f4d03f',[DIAMOND]:'#64e6e6'})[id], oc=hx(ore);
+      for(let i=0;i<4;i++){ const x=2+((Math.random()*11)|0), y=2+((Math.random()*11)|0);
+        for(const d of [[0,0],[1,0],[0,1],[1,1]]) if(Math.random()<0.8){ const n=(Math.random()*2-1)*20; put(ox,oy,x+d[0],y+d[1],oc[0]+n,oc[1]+n,oc[2]+n,1);} }
+      return;
+    }
+    if(id===LEAVES){ for(let i=0;i<24;i++){ const x=(Math.random()*TS)|0,y=(Math.random()*TS)|0; if(Math.random()<0.5) dark(x,y,30); else lite(x,y,16);} return; }
+    if(id===CACTUS){ for(let x=0;x<TS;x+=4) for(let y=0;y<TS;y++) dark(x,y,22); for(let i=0;i<6;i++) lite((Math.random()*TS)|0,(Math.random()*TS)|0,28); return; }
+    if(id===SNOW){ for(let i=0;i<10;i++) lite((Math.random()*TS)|0,(Math.random()*TS)|0,16); return; }
+    if(id===TNT){
+      if(kind==='side'){ for(let y=6;y<=9;y++)for(let x=0;x<TS;x++) put(ox,oy,x,y,235,235,235,1); for(let x=0;x<TS;x+=2) put(ox,oy,x,7,40,40,40,1); }
+      else { for(let y=0;y<TS;y++)for(let x=0;x<TS;x++) put(ox,oy,x,y,210,70,55,1); put(ox,oy,7,3,30,30,30,1); put(ox,oy,8,4,30,30,30,1); put(ox,oy,8,1,240,200,60,1); }
+      return;
+    }
+    // DIRT, STONE, SAND, GRAVEL, CLAY e blocchi colorati: solo rumore (già applicato)
+  }
+  for(const key in BLOCKS){ const id=+key; const t={};
+    ['top','side','bottom'].forEach(k=>{ const col=next%COLS, row=(next/COLS)|0; paint(id,k,col*TS,row*TS); t[k]=next; next++; });
+    BLOCKTILE[id]=t;
+  }
+})();
+const ATLAS_TEX=new THREE.CanvasTexture(atlasCanvas);
+ATLAS_TEX.magFilter=THREE.NearestFilter; ATLAS_TEX.minFilter=THREE.NearestFilter; ATLAS_TEX.generateMipmaps=false;
+
+const chunkMat=new THREE.MeshLambertMaterial({ map:ATLAS_TEX, vertexColors:true, side:THREE.DoubleSide });
+const liquidMat=new THREE.MeshLambertMaterial({ map:ATLAS_TEX, vertexColors:true, transparent:true, side:THREE.DoubleSide, depthWrite:false });
 
 // evidenziatore blocco mirato
 const hl=new THREE.LineSegments(
@@ -445,50 +514,58 @@ const FACES=[
   { n:[0,0,1],  c:[[1,0,1],[1,1,1],[0,1,1],[0,0,1]] },
   { n:[0,0,-1], c:[[0,0,0],[0,1,0],[1,1,0],[1,0,0]] },
 ];
-function hexRGB(hex){ const n=parseInt(hex.slice(1),16); return [(n>>16)/255,((n>>8)&255)/255,(n&255)/255]; }
-function faceColor(id, fi){
-  const b=BLOCKS[id]; let hex;
-  if(fi===2) hex=b.top||b.all; else if(fi===3) hex=b.bottom||b.all; else hex=b.side||b.all;
-  const sh = fi===2?1.0 : fi===3?0.62 : 0.82;
-  const c=hexRGB(hex); return [c[0]*sh,c[1]*sh,c[2]*sh];
-}
+const FACE_UV=[
+  [[0,1],[0,0],[1,0],[1,1]], // +X
+  [[1,1],[1,0],[0,0],[0,1]], // -X
+  [[0,1],[1,1],[1,0],[0,0]], // +Y (top)
+  [[0,0],[1,0],[1,1],[0,1]], // -Y (bottom)
+  [[1,1],[1,0],[0,0],[0,1]], // +Z
+  [[0,1],[0,0],[1,0],[1,1]], // -Z
+];
+function atlasUV(tile,uu,vv){ const col=tile%COLS, row=(tile/COLS)|0; return [ (col+uu)/COLS, 1-(row+vv)/COLS ]; }
+function faceShade(fi){ return fi===2?1.0 : fi===3?0.5 : 0.8; }
 function buildChunk(cx,cz){
   const key=cx+","+cz;
   const old=chunks.get(key);
   if(old){ scene.remove(old.solid); scene.remove(old.liquid);
            old.solid.geometry.dispose(); old.liquid.geometry.dispose(); }
-  const sp=[],sc=[],sn=[],si=[]; let sv=0;
-  const lp=[],lc=[],ln=[],li=[]; let lv=0;
+  const sp=[],sc=[],sn=[],su=[],si=[]; let sv=0;
+  const lp=[],lc=[],ln=[],lu=[],li=[]; let lv=0;
   const x0=cx*CH, z0=cz*CH, x1=Math.min(WX,x0+CH), z1=Math.min(WZ,z0+CH);
   for(let y=0;y<WY;y++) for(let z=z0;z<z1;z++) for(let x=x0;x<x1;x++){
     const id=getBlock(x,y,z);
     if(id===AIR||(BLOCKS[id]&&BLOCKS[id].torch)) continue;
-    const liquid=BLOCKS[id].liquid;
+    const trans = BLOCKS[id].liquid || id===GLASS;   // acqua e vetro: passaggio trasparente
+    const lowered = BLOCKS[id].liquid?0.12:0;
     for(let fi=0;fi<6;fi++){
       const nf=FACES[fi].n, nb=getBlock(x+nf[0],y+nf[1],z+nf[2]);
-      // disegna la faccia se il vicino non la nasconde
-      if(liquid){ if(nb===WATER||isOpaque(nb)) continue; }
-      else { if(isOpaque(nb)) continue; if(nb===id && id===LEAVES) {} }
-      const col=faceColor(id,fi);
-      const P=liquid?lp:sp, C=liquid?lc:sc, N=liquid?ln:sn, I=liquid?li:si;
-      const vbase=liquid?lv:sv;
-      for(const cc of FACES[fi].c){
-        P.push(x+cc[0], y+cc[1]-(liquid?0.12:0), z+cc[2]);
-        C.push(col[0],col[1],col[2]); N.push(nf[0],nf[1],nf[2]);
+      if(trans){ if(nb===id || isOpaque(nb)) continue; }   // niente facce interne tra blocchi trasparenti uguali
+      else { if(isOpaque(nb)) continue; }
+      const sh=faceShade(fi);
+      const kind = fi===2?'top':fi===3?'bottom':'side';
+      const tile = BLOCKTILE[id][kind];
+      const uvf=FACE_UV[fi];
+      const P=trans?lp:sp, C=trans?lc:sc, N=trans?ln:sn, U=trans?lu:su, I=trans?li:si;
+      const vbase=trans?lv:sv;
+      for(let k=0;k<4;k++){ const cc=FACES[fi].c[k];
+        P.push(x+cc[0], y+cc[1]-lowered, z+cc[2]);
+        C.push(sh,sh,sh); N.push(nf[0],nf[1],nf[2]);
+        const uv=atlasUV(tile, uvf[k][0], uvf[k][1]); U.push(uv[0],uv[1]);
       }
       I.push(vbase,vbase+1,vbase+2, vbase,vbase+2,vbase+3);
-      if(liquid) lv+=4; else sv+=4;
+      if(trans) lv+=4; else sv+=4;
     }
   }
-  const mk=(P,C,N,I,mat)=>{
-    const g=new THREE.BufferGeometry();
-    g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
-    g.setAttribute('color',new THREE.Float32BufferAttribute(C,3));
-    g.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
-    g.setIndex(I);
-    const m=new THREE.Mesh(g,mat); m.frustumCulled=true; scene.add(m); return m;
+  const mk=(P,C,N,U,I,mat)=>{
+    const gg=new THREE.BufferGeometry();
+    gg.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+    gg.setAttribute('color',new THREE.Float32BufferAttribute(C,3));
+    gg.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
+    gg.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));
+    gg.setIndex(I);
+    const m=new THREE.Mesh(gg,mat); m.frustumCulled=true; scene.add(m); return m;
   };
-  chunks.set(key,{ solid:mk(sp,sc,sn,si,chunkMat), liquid:mk(lp,lc,ln,li,liquidMat) });
+  chunks.set(key,{ solid:mk(sp,sc,sn,su,si,chunkMat), liquid:mk(lp,lc,ln,lu,li,liquidMat) });
 }
 function buildAllChunks(){
   for(const {solid,liquid} of chunks.values()){ scene.remove(solid); scene.remove(liquid);
@@ -591,6 +668,17 @@ function hurtPlayer(d){
 }
 
 /* ===================== Mostri ===================== */
+/* ===== Texture pixel per le creature ===== */
+function pixTex(draw){ const cv=document.createElement('canvas'); cv.width=cv.height=16; draw(cv.getContext('2d'));
+  const t=new THREE.CanvasTexture(cv); t.magFilter=t.minFilter=THREE.NearestFilter; t.generateMipmaps=false; return t; }
+function rgbComp(n){ return [n>>16&255,n>>8&255,n&255]; }
+function noiseFillN(g,n,amp){ const c=rgbComp(n); for(let y=0;y<16;y++)for(let x=0;x<16;x++){ const d=(Math.random()*2-1)*amp;
+  g.fillStyle='rgb('+Math.max(0,Math.min(255,c[0]+d|0))+','+Math.max(0,Math.min(255,c[1]+d|0))+','+Math.max(0,Math.min(255,c[2]+d|0))+')'; g.fillRect(x,y,1,1);} }
+function faceTexNum(col){ return pixTex(g=>{ noiseFillN(g,col,10); g.fillStyle='#161616'; g.fillRect(4,6,2,2); g.fillRect(10,6,2,2); g.fillStyle='rgba(0,0,0,0.35)'; g.fillRect(6,11,4,1); }); }
+function bodyTexNum(col){ return pixTex(g=>noiseFillN(g,col,12)); }
+const MOB_BODY=pixTex(g=>noiseFillN(g,0x4a9a4a,14));
+const MOB_FACE=pixTex(g=>{ noiseFillN(g,0x5aa05a,12); g.fillStyle='#0b0b0b'; g.fillRect(4,6,2,2); g.fillRect(10,6,2,2); g.fillStyle='#2c3e2c'; g.fillRect(6,11,4,1); });
+
 const mobGeo=new THREE.BoxGeometry(0.6,1.8,0.6);
 function spawnMob(){
   if(mobs.length>=8) return;
@@ -599,9 +687,9 @@ function spawnMob(){
   if(mx<1||mx>=WX-1||mz<1||mz>=WZ-1) return;
   let my=WY-1; while(my>0 && getBlock(mx,my,mz)===AIR) my--;
   my+=1; if(getBlock(mx,my,mz)!==AIR) return;
-  const mat=new THREE.MeshLambertMaterial({color:0x4a9a4a});
-  const mesh=new THREE.Mesh(mobGeo,mat); scene.add(mesh);
-  const mob={ kind:'mob', x:mx+0.5,y:my,z:mz+0.5, vy:0, hp:14, hurtT:0, dmgCD:0, burn:0, mesh, mat };
+  const body=new THREE.MeshLambertMaterial({map:MOB_BODY}), face=new THREE.MeshLambertMaterial({map:MOB_FACE});
+  const mesh=new THREE.Mesh(mobGeo,[body,body,body,body,face,body]); scene.add(mesh);  // faccia su +Z
+  const mob={ kind:'mob', x:mx+0.5,y:my,z:mz+0.5, vy:0, hp:14, hurtT:0, dmgCD:0, burn:0, mesh, body, face };
   mesh.userData.creature=mob; mobs.push(mob);
 }
 function mobCollides(x,y,z){
@@ -637,9 +725,9 @@ function updateMobs(dt,night){
     }
     // bruciano di giorno
     if(!night){ m.burn+=dt; if(m.burn>1.0){ m.hp-=2; m.burn=0; } } else m.burn=0;
-    m.mat.color.setHex(m.hurtT>0?0xff5555:0x4a9a4a);
+    const fl=m.hurtT>0; m.body.color.setHex(fl?0xff5555:0xffffff); m.face.color.setHex(fl?0xff5555:0xffffff);
     m.mesh.position.set(m.x, m.y+0.9, m.z);
-    m.mesh.lookAt(player.x, m.y+0.9, player.z);
+    m.mesh.rotation.y=Math.atan2(player.x-m.x, player.z-m.z);   // faccia verso il giocatore
     if(m.hp<=0 || d>60){ scene.remove(m.mesh); m.mesh.geometry.dispose?0:0; mobs.splice(i,1); }
   }
 }
@@ -654,14 +742,18 @@ const ANIMAL={
 const ANIMAL_TYPES=['cow','pig','sheep','horse'];
 function makeAnimal(type){
   const C=ANIMAL[type], g=new THREE.Group();
-  const body=new THREE.Mesh(new THREE.BoxGeometry(C.bw,C.bh,C.bl), new THREE.MeshLambertMaterial({color:C.body}));
+  if(!C._body){ C._body=bodyTexNum(C.body); C._headPlain=bodyTexNum(C.head); C._headFace=faceTexNum(C.head); C._leg=bodyTexNum(C.leg); }
+  const body=new THREE.Mesh(new THREE.BoxGeometry(C.bw,C.bh,C.bl), new THREE.MeshLambertMaterial({map:C._body}));
   body.position.y=C.legH+C.bh/2; g.add(body);
-  const head=new THREE.Mesh(new THREE.BoxGeometry(C.hs,C.hs,C.hs), new THREE.MeshLambertMaterial({color:C.head}));
+  const hp=()=>new THREE.MeshLambertMaterial({map:C._headPlain});
+  const headMats=[hp(),hp(),hp(),hp(), new THREE.MeshLambertMaterial({map:C._headFace}), hp()];  // faccia su +Z
+  const head=new THREE.Mesh(new THREE.BoxGeometry(C.hs,C.hs,C.hs), headMats);
   head.position.set(0, C.legH+C.bh*0.85, C.bl/2+C.hs*0.25); g.add(head);
-  const legGeo=new THREE.BoxGeometry(0.16,C.legH,0.16), legMat=new THREE.MeshLambertMaterial({color:C.leg});
+  g.userData.headMats=headMats;
+  const legGeo=new THREE.BoxGeometry(0.16,C.legH,0.16);
   const lx=C.bw/2-0.1, lz=C.bl/2-0.15;
   for(const [sx,sz] of [[-lx,-lz],[lx,-lz],[-lx,lz],[lx,lz]]){
-    const l=new THREE.Mesh(legGeo,legMat); l.position.set(sx,C.legH/2,sz); g.add(l);
+    const l=new THREE.Mesh(legGeo,new THREE.MeshLambertMaterial({map:C._leg})); l.position.set(sx,C.legH/2,sz); g.add(l);
   }
   return g;
 }
@@ -706,7 +798,7 @@ function updateAnimals(dt){
     if(onG && blocked && (hx||hz)) a.vy=JUMP*0.7;   // saltella sugli ostacoli
     if(hx||hz) a.mesh.rotation.y=Math.atan2(hx,hz);
     a.mesh.position.set(a.x,a.y,a.z);
-    a.mesh.children[1].material.color.setHex(a.hurtT>0?0xff7777:def.head);
+    const fl=a.hurtT>0; const hm=a.mesh.userData.headMats; if(hm) for(const mm of hm) mm.color.setHex(fl?0xff7777:0xffffff);
     if(a.y<-20 || Math.hypot(a.x-player.x,a.z-player.z)>72){ scene.remove(a.mesh); animals.splice(i,1); }
   }
 }
@@ -923,76 +1015,53 @@ function renderClock(){
 }
 function drawCubeIcon(id,size){
   const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d');
-  const b=BLOCKS[id]; const top=b.top||b.all, side=b.side||b.all;
-  const tc=new THREE.Color(top), sc=new THREE.Color(side);
-  const s=size, ox=s*0.5, w=s*0.34, hh=s*0.2;
-  // top
-  g.fillStyle=`rgb(${tc.r*255|0},${tc.g*255|0},${tc.b*255|0})`;
-  g.beginPath(); g.moveTo(ox,s*0.12); g.lineTo(ox+w,s*0.12+hh); g.lineTo(ox,s*0.12+2*hh); g.lineTo(ox-w,s*0.12+hh); g.closePath(); g.fill();
-  // left
-  g.fillStyle=`rgb(${sc.r*0.8*255|0},${sc.g*0.8*255|0},${sc.b*0.8*255|0})`;
-  g.beginPath(); g.moveTo(ox-w,s*0.12+hh); g.lineTo(ox,s*0.12+2*hh); g.lineTo(ox,s*0.86); g.lineTo(ox-w,s*0.66); g.closePath(); g.fill();
-  // right
-  g.fillStyle=`rgb(${sc.r*0.62*255|0},${sc.g*0.62*255|0},${sc.b*0.62*255|0})`;
-  g.beginPath(); g.moveTo(ox+w,s*0.12+hh); g.lineTo(ox,s*0.12+2*hh); g.lineTo(ox,s*0.86); g.lineTo(ox+w,s*0.66); g.closePath(); g.fill();
+  g.imageSmoothingEnabled=false;
+  const t=BLOCKTILE[id]; if(!t) return c;
+  const s=size;
+  const T=[s*0.5,s*0.08], R=[s*0.90,s*0.30], Bc=[s*0.5,s*0.52], L=[s*0.10,s*0.30];
+  const Ld=[s*0.10,s*0.70], Bd=[s*0.5,s*0.92], Rd=[s*0.90,s*0.70];
+  const face=(tile,o,u,v,shade)=>{
+    const sx=(tile%COLS)*TS, sy=((tile/COLS)|0)*TS;
+    g.save();
+    g.setTransform(u[0]-o[0],u[1]-o[1], v[0]-o[0],v[1]-o[1], o[0],o[1]);
+    g.drawImage(atlasCanvas, sx,sy,TS,TS, 0,0,1,1);
+    g.restore();
+    if(shade>0){ g.beginPath(); g.moveTo(o[0],o[1]); g.lineTo(u[0],u[1]);
+      g.lineTo(u[0]+v[0]-o[0],u[1]+v[1]-o[1]); g.lineTo(v[0],v[1]); g.closePath();
+      g.fillStyle='rgba(0,0,0,'+shade+')'; g.fill(); }
+  };
+  face(t.top,  L, T, Bc, 0);     // faccia superiore
+  face(t.side, L, Bc, Ld, 0.18); // faccia sinistra
+  face(t.side, Bc, R, Bd, 0.34); // faccia destra
   return c;
 }
 function drawToolIcon(id,size){
-  const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); const s=size;
-  const it=ITEMS[id]||{icon:'stick',color:'#9c6b3f'}, col=it.color||'#ccc';
-
-  if(it.icon==='stick'){
-    g.strokeStyle='#9c6b3f'; g.lineWidth=Math.max(3,s*0.1); g.lineCap='round';
-    g.beginPath(); g.moveTo(s*0.34,s*0.82); g.lineTo(s*0.66,s*0.2); g.stroke();
-    return c;
-  }
-
-  if(it.icon==='sword'){
-    // spada realistica: lama affusolata, elsa, impugnatura, pomo — orientata in diagonale
-    g.save(); g.translate(s*0.5,s*0.52); g.rotate(-Math.PI/4);
-    const bw=s*0.12, gY=s*0.04, bl=s*0.56;
-    // lama (punta in alto)
-    g.beginPath();
-    g.moveTo(-bw/2,gY); g.lineTo(-bw/2,gY-bl*0.82); g.lineTo(0,gY-bl);
-    g.lineTo(bw/2,gY-bl*0.82); g.lineTo(bw/2,gY); g.closePath();
-    g.fillStyle=col; g.fill();
-    // mezzo lato più chiaro (riflesso) e mezzo più scuro
-    g.beginPath();
-    g.moveTo(0,gY); g.lineTo(0,gY-bl); g.lineTo(bw/2,gY-bl*0.82); g.lineTo(bw/2,gY); g.closePath();
-    g.fillStyle='rgba(0,0,0,0.18)'; g.fill();
-    g.beginPath();
-    g.moveTo(-bw/2,gY); g.lineTo(-bw/2,gY-bl*0.82); g.lineTo(0,gY-bl); g.lineTo(0,gY); g.closePath();
-    g.fillStyle='rgba(255,255,255,0.35)'; g.fill();
-    // scanalatura centrale
-    g.strokeStyle='rgba(0,0,0,0.30)'; g.lineWidth=Math.max(1,s*0.018);
-    g.beginPath(); g.moveTo(0,gY-bl*0.92); g.lineTo(0,gY-s*0.02); g.stroke();
-    // elsa (guardia) in ottone
-    g.fillStyle='#caa53a'; g.strokeStyle='rgba(0,0,0,0.35)'; g.lineWidth=1;
-    g.fillRect(-s*0.17,gY,s*0.34,s*0.055); g.strokeRect(-s*0.17,gY,s*0.34,s*0.055);
-    // impugnatura in cuoio
-    g.fillStyle='#5a3b22';
-    g.fillRect(-s*0.035,gY+s*0.055,s*0.07,s*0.17);
-    g.strokeStyle='rgba(0,0,0,0.35)';
-    for(let i=0;i<3;i++){ const yy=gY+s*0.085+i*s*0.05; g.beginPath(); g.moveTo(-s*0.035,yy); g.lineTo(s*0.035,yy); g.stroke(); }
-    // pomo
-    g.fillStyle='#caa53a';
-    g.beginPath(); g.arc(0,gY+s*0.055+s*0.17+s*0.025,s*0.045,0,7); g.fill(); g.stroke();
-    g.restore();
-    return c;
-  }
-
-  // manico di legno (diagonale) per piccone/ascia/pala
-  g.strokeStyle='#7a5230'; g.lineWidth=Math.max(3,s*0.1); g.lineCap='round';
-  g.beginPath(); g.moveTo(s*0.3,s*0.82); g.lineTo(s*0.6,s*0.42); g.stroke();
-  g.fillStyle=col; g.strokeStyle='rgba(0,0,0,0.35)'; g.lineWidth=1;
-  if(it.icon==='pick'){
-    g.lineWidth=Math.max(3,s*0.09); g.strokeStyle=col;
-    g.beginPath(); g.moveTo(s*0.4,s*0.34); g.quadraticCurveTo(s*0.6,s*0.18,s*0.8,s*0.34); g.stroke();
+  const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); g.imageSmoothingEnabled=false;
+  const it=ITEMS[id]||{icon:'stick',color:'#9c6b3f'};
+  const o=document.createElement('canvas'); o.width=o.height=16; const p=o.getContext('2d');
+  const W='#6e4a28', Wl='#8a5c33', M=it.color||'#cfcfcf';
+  const dcol=(hex)=>{ const n=parseInt(hex.slice(1),16); return 'rgb('+Math.max(0,(n>>16&255)-40)+','+Math.max(0,(n>>8&255)-40)+','+Math.max(0,(n&255)-40)+')'; };
+  const Md=dcol(M);
+  const rect=(x0,y0,x1,y1,col)=>{ p.fillStyle=col; for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++) p.fillRect(x,y,1,1); };
+  const px=(x,y,col)=>{ p.fillStyle=col; p.fillRect(x,y,1,1); };
+  if(it.icon==='stick'){ rect(7,3,8,13,W); for(let y=3;y<=13;y++) px(7,y,Wl); }
+  else if(it.icon==='sword'){
+    rect(7,2,8,8,M); for(let y=2;y<=8;y++) px(8,y,Md); px(7,1,M);          // lama
+    rect(5,9,10,9,'#caa53a');                                             // guardia
+    rect(7,10,8,13,W); px(7,10,Wl); px(7,12,Wl);                          // impugnatura
+    rect(6,14,9,14,'#caa53a');                                            // pomo
+  } else if(it.icon==='pick'){
+    rect(7,5,8,14,W); for(let y=5;y<=14;y++) px(7,y,Wl);                  // manico
+    rect(3,3,12,3,M); px(3,4,M); px(4,4,M); px(11,4,M); px(12,4,M);       // testa
+    for(let x=3;x<=12;x++) px(x,3,(x%2?M:Md));
   } else if(it.icon==='axe'){
-    g.beginPath(); g.moveTo(s*0.58,s*0.22); g.lineTo(s*0.8,s*0.34); g.lineTo(s*0.74,s*0.54); g.lineTo(s*0.55,s*0.4); g.closePath(); g.fill(); g.stroke();
+    rect(8,2,9,14,W); for(let y=2;y<=14;y++) px(8,y,Wl);                  // manico
+    rect(4,2,7,2,M); rect(3,3,7,5,M); rect(4,6,6,6,M); px(3,3,Md); px(3,4,Md);
   } else if(it.icon==='shovel'){
-    g.beginPath(); g.ellipse(s*0.62,s*0.34,s*0.12,s*0.16,0,0,7); g.fill(); g.stroke();
+    rect(7,1,8,10,W); for(let y=1;y<=10;y++) px(7,y,Wl);                  // manico
+    rect(6,10,9,13,M); px(7,14,M); px(8,14,M); px(6,10,Md); px(9,10,Md);  // pala
   }
+  g.drawImage(o,0,0,16,16,0,0,size,size);
   return c;
 }
 function iconFor(id,size){ return (id>=100)?drawToolIcon(id,size):drawCubeIcon(id,size); }
