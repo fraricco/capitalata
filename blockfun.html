@@ -585,6 +585,33 @@ function editBlock(x,y,z,id){
     if(a>=0&&b>=0&&a<Math.ceil(WX/CH)&&b<Math.ceil(WZ/CH)) buildChunk(a,b); }
 }
 
+// L'acqua è adiacente a questa cella (di lato o sopra)?
+function waterTouches(x,y,z){
+  return getBlock(x+1,y,z)===WATER||getBlock(x-1,y,z)===WATER||getBlock(x,y,z+1)===WATER||getBlock(x,y,z-1)===WATER||getBlock(x,y+1,z)===WATER;
+}
+// Espansione locale dell'acqua dopo aver rotto un blocco vicino all'acqua
+function flowWater(bx,by,bz){
+  const R=6, topY=Math.min(WY-1,by+2), botY=Math.max(1,by-22);
+  const set=new Set();
+  let active=true, passes=0;
+  while(active && passes<28){
+    active=false; passes++;
+    for(let y=topY;y>=botY;y--){
+      for(let z=bz-R;z<=bz+R;z++) for(let x=bx-R;x<=bx+R;x++){
+        if(x<1||x>=WX-1||z<1||z>=WZ-1) continue;
+        if(getBlock(x,y,z)!==AIR) continue;
+        let fill=false;
+        if(getBlock(x,y+1,z)===WATER) fill=true;                 // caduta verticale (senza limite di raggio)
+        else if(Math.abs(x-bx)+Math.abs(z-bz)<=R){               // scorrimento laterale entro il raggio
+          if(getBlock(x+1,y,z)===WATER||getBlock(x-1,y,z)===WATER||getBlock(x,y,z+1)===WATER||getBlock(x,y,z-1)===WATER) fill=true;
+        }
+        if(fill){ setBlockRaw(x,y,z,WATER); addChunks(set,x,z); active=true; }
+      }
+    }
+  }
+  rebuildSet(set);
+}
+
 /* ===================== Inventario ===================== */
 function currentBlockId(){ return mode==='creative'?creativeHotbar[selSlot]:(survOrder[selSlot]!=null?survOrder[selSlot]:null); }
 function hasBlock(id){ return mode==='creative'||inv[id]>0; }
@@ -917,6 +944,7 @@ function breakBlock(vox,tool){
     const hasPick=tool&&tool.cat==='pick';
     if(!needsPick||hasPick) addBlock(dropOf(vox.id));   // pietra/minerali: serve il piccone per il drop
   }
+  if(vox.id!==WATER && waterTouches(vox.x,vox.y,vox.z)) flowWater(vox.x,vox.y,vox.z);  // l'acqua si espande nel vuoto
 }
 // Clic/tocco singolo: attacca una creatura o innesca la TNT (azioni istantanee)
 function doPrimaryClick(){
