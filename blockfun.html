@@ -206,7 +206,7 @@ const AIR=0, GRASS=1, DIRT=2, STONE=3, LOG=4, LEAVES=5, SAND=6, WATER=7,
       PLANKS=8, GLASS=9, COAL=10, IRON=11, GOLD=12, DIAMOND=13, COBBLE=14,
       BEDROCK=15, TABLE=16, BRICK=17, TORCH=18, SNOW=19, CACTUS=20, TNT=21,
       STONEBRICK=22, CLAY=23, GRAVEL=24, WHITE=25, RED=26, ORANGE=27, YELLOW=28,
-      GREEN=29, BLUE=30, CYAN=31, PURPLE=32, PINK=33, BLACK=34;
+      GREEN=29, BLUE=30, CYAN=31, PURPLE=32, PINK=33, BLACK=34, DOOR=35, DOOR_OPEN=36;
 
 const BLOCKS = {
   [GRASS]:{ name:"Erba",   top:"#6ab150", side:"#7a5a32", bottom:"#8a5a2b" },
@@ -243,12 +243,14 @@ const BLOCKS = {
   [PURPLE]:{ name:"Blocco viola",    all:"#8a4fbf" },
   [PINK]:{ name:"Blocco rosa",       all:"#e58ab0" },
   [BLACK]:{ name:"Blocco nero",      all:"#2b2b30" },
+  [DOOR]:{ name:"Porta",      all:"#9a6a3a" },
+  [DOOR_OPEN]:{ name:"Porta aperta", all:"#9a6a3a", passable:true },
 };
-function isSolid(id){ return id!==AIR && BLOCKS[id] && !BLOCKS[id].liquid && !BLOCKS[id].torch; }
+function isSolid(id){ return id!==AIR && BLOCKS[id] && !BLOCKS[id].liquid && !BLOCKS[id].torch && !BLOCKS[id].passable; }
 function isOpaque(id){ return isSolid(id) && id!==GLASS && id!==LEAVES; }
-function dropOf(id){ if(id===GRASS) return DIRT; if(id===STONE) return COBBLE; return id; }
+function dropOf(id){ if(id===GRASS) return DIRT; if(id===STONE) return COBBLE; if(id===DOOR_OPEN) return DOOR; return id; }
 
-const PALETTE=[GRASS,DIRT,STONE,COBBLE,STONEBRICK,BRICK,CLAY,GRAVEL,LOG,PLANKS,LEAVES,SAND,GLASS,TABLE,TORCH,SNOW,CACTUS,TNT,
+const PALETTE=[GRASS,DIRT,STONE,COBBLE,STONEBRICK,BRICK,CLAY,GRAVEL,LOG,PLANKS,DOOR,LEAVES,SAND,GLASS,TABLE,TORCH,SNOW,CACTUS,TNT,
   COAL,IRON,GOLD,DIAMOND,
   WHITE,RED,ORANGE,YELLOW,GREEN,BLUE,CYAN,PURPLE,PINK,BLACK];
 const RECIPES=[
@@ -258,7 +260,16 @@ const RECIPES=[
   { name:"Vetro (fusione)",in:{[SAND]:1},            out:{[GLASS]:1} },
   { name:"Mattoni",        in:{[COBBLE]:4},          out:{[BRICK]:4} },
   { name:"Mattoni di pietra",in:{[COBBLE]:4},        out:{[STONEBRICK]:4} },
+  { name:"Porta",          in:{[PLANKS]:6},          out:{[DOOR]:2} },
   { name:"TNT",            in:{[SAND]:4,[COAL]:1},   out:{[TNT]:1} },
+];
+// Scambi offerti dai villager (id 150 = spada di diamante)
+const TRADES=[
+  { in:{[COAL]:6},    out:{[IRON]:1} },
+  { in:{[IRON]:4},    out:{[GOLD]:1} },
+  { in:{[GOLD]:2},    out:{[DIAMOND]:1} },
+  { in:{[WHITE]:6},   out:{[GOLD]:1} },
+  { in:{[DIAMOND]:1}, out:{150:1} },
 ];
 
 /* ===================== Attrezzi (item, non blocchi) ===================== */
@@ -313,6 +324,8 @@ const sun=new THREE.DirectionalLight(0xffffff,1.0);
 const ambient=new THREE.AmbientLight(0xffffff,0.5);
 const hemi=new THREE.HemisphereLight(0xbfd8ff,0x4a3a2a,0.4);
 scene.add(sun); scene.add(ambient); scene.add(hemi);
+const torchLights=[]; for(let i=0;i<6;i++){ const L=new THREE.PointLight(0xffb24d,0,7,2); scene.add(L); torchLights.push(L); }
+const playerLight=new THREE.PointLight(0xffe0b0,0,11,2); scene.add(playerLight);  // bagliore del minatore
 const fog=new THREE.Fog(0x9ec9ff, 40, 120);
 scene.fog=fog;
 
@@ -370,6 +383,21 @@ const BLOCKTILE={};
     if(id===LEAVES){ for(let i=0;i<24;i++){ const x=(Math.random()*TS)|0,y=(Math.random()*TS)|0; if(Math.random()<0.5) dark(x,y,30); else lite(x,y,16);} return; }
     if(id===CACTUS){ for(let x=0;x<TS;x+=4) for(let y=0;y<TS;y++) dark(x,y,22); for(let i=0;i<6;i++) lite((Math.random()*TS)|0,(Math.random()*TS)|0,28); return; }
     if(id===SNOW){ for(let i=0;i<10;i++) lite((Math.random()*TS)|0,(Math.random()*TS)|0,16); return; }
+    if(id===DOOR){
+      for(let y=0;y<TS;y++) if(y%7===0) for(let x=0;x<TS;x++) dark(x,y,24);        // traverse
+      for(let x=0;x<TS;x++) if(x%5===2) for(let y=0;y<TS;y++) dark(x,y,10);
+      g.fillStyle='#3a2a18'; g.fillRect(ox+2,oy+2,4,5); g.fillRect(ox+10,oy+2,4,5);  // pannelli
+      g.fillRect(ox+2,oy+9,4,5); g.fillRect(ox+10,oy+9,4,5);
+      g.fillStyle='#d8c24a'; g.fillRect(ox+12,oy+8,2,2);                              // maniglia
+      return;
+    }
+    if(id===DOOR_OPEN){
+      g.clearRect(ox,oy,TS,TS);
+      const w=hx('#9a6a3a');
+      for(let y=0;y<TS;y++)for(let x=0;x<4;x++) put(ox,oy,x,y,w[0],w[1],w[2],1);      // anta aperta sul lato
+      g.fillStyle='#d8c24a'; g.fillRect(ox+2,oy+8,1,2);
+      return;
+    }
     if(id===TNT){
       if(kind==='side'){ for(let y=6;y<=9;y++)for(let x=0;x<TS;x++) put(ox,oy,x,y,235,235,235,1); for(let x=0;x<TS;x+=2) put(ox,oy,x,7,40,40,40,1); }
       else { for(let y=0;y<TS;y++)for(let x=0;x<TS;x++) put(ox,oy,x,y,210,70,55,1); put(ox,oy,7,3,30,30,30,1); put(ox,oy,8,4,30,30,30,1); put(ox,oy,8,1,240,200,60,1); }
@@ -455,18 +483,22 @@ function villageCell(vi,x,y,z){
   if(dx< -RX||dx>RX||dz< -RZ||dz>RZ||dy< -1||dy>H) return null;
   if(dy===-1) return COBBLE;                                     // pavimento
   if(dy===H){ return (Math.abs(dx)<2&&Math.abs(dz)<2)?AIR:COBBLE; } // soffitto con lucernario
+  if(dy===0 && Math.abs(dx)===5 && Math.abs(dz)===5) return TORCH;  // torce agli angoli
   const edge=(Math.abs(dx)===RX||Math.abs(dz)===RZ);
   if(edge){ return (Math.abs(dx)<2||Math.abs(dz)<2)?AIR:COBBLE; } // mura con aperture
-  // due capanne di assi
-  for(const cx of [-4,4]){
+  for(const cx of [-4,4]){                                       // due capanne di assi con porta
     const lx=dx-cx, lz=dz;
     if(lx>=-1&&lx<=1&&lz>=-1&&lz<=1&&dy<=3){
       if(dy===3) return PLANKS;
-      if(Math.abs(lx)===1||Math.abs(lz)===1){ if(lx===0&&lz===-1&&dy<=1) return AIR; return PLANKS; }
+      if(Math.abs(lx)===1||Math.abs(lz)===1){
+        if(lx===0&&lz===-1){ if(dy===0) return DOOR; if(dy===1) return AIR; }   // porta
+        return PLANKS;
+      }
+      if(dy===2 && lx===0 && lz===0) return TORCH;               // torcia dentro la capanna
       return AIR;
     }
   }
-  return AIR;                                                    // piazza del villaggio
+  return AIR;
 }
 function villageBlock(x,y,z){
   const gx=Math.floor(x/VSP), gz=Math.floor(z/VSP);
@@ -480,7 +512,7 @@ function deepGen(x,y,z){
   const vb=villageBlock(x,y,z); if(vb!==null) return vb;
   const n1=vnoise(x*0.11, z*0.11 - y*0.08);
   const n2=vnoise(x*0.09 + y*0.07 + 31, z*0.10 + 17);
-  if(n1>0.70 && n2>0.60) return AIR;                             // caverne (rare)
+  if(n1>0.70 && n2>0.60) return (hash2(x*5+1,z*5+y*3)<0.035)?TORCH:AIR;   // caverne con qualche torcia
   const d=-y, r=hash2(x*7+y*13+3, z*5+y*3+7);
   if(r < 0.006+Math.min(0.02,d*0.0002)) return DIAMOND;          // più diamanti in profondità
   if(r < 0.03) return GOLD;
@@ -597,8 +629,25 @@ function buildChunk(cx,cz){
   const x0=cx*CH, z0=cz*CH, x1=Math.min(WX,x0+CH), z1=Math.min(WZ,z0+CH);
   for(let y=winMinY;y<=winMaxY;y++) for(let z=z0;z<z1;z++) for(let x=x0;x<x1;x++){
     const id=getBlock(x,y,z);
-    if(id===AIR||(BLOCKS[id]&&BLOCKS[id].torch)) continue;
-    const trans = BLOCKS[id].liquid || id===GLASS;   // acqua e vetro: passaggio trasparente
+    if(id===AIR) continue;
+    if(BLOCKS[id].torch){   // torcia: piccola barra luminosa
+      const t=BLOCKTILE[id].side;
+      const x0=x+0.42,x1=x+0.58,y0=y+0.02,y1=y+0.62,z0=z+0.42,z1=z+0.58;
+      const bf=[
+        {n:[1,0,0],v:[[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[x1,y0,z1]]},
+        {n:[-1,0,0],v:[[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],[x0,y0,z0]]},
+        {n:[0,1,0],v:[[x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0]]},
+        {n:[0,0,1],v:[[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],[x0,y0,z1]]},
+        {n:[0,0,-1],v:[[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],[x1,y0,z0]]},
+      ];
+      for(const f of bf){ const uu=[[0,1],[0,0],[1,0],[1,1]];
+        for(let k=0;k<4;k++){ sp.push(f.v[k][0],f.v[k][1],f.v[k][2]); sc.push(1,1,1); sn.push(f.n[0],f.n[1],f.n[2]);
+          const uv=atlasUV(t,uu[k][0],uu[k][1]); su.push(uv[0],uv[1]); }
+        si.push(sv,sv+1,sv+2, sv,sv+2,sv+3); sv+=4;
+      }
+      continue;
+    }
+    const trans = BLOCKS[id].liquid || id===GLASS || id===DOOR_OPEN;   // acqua, vetro, porta aperta: trasparenti
     const lowered = BLOCKS[id].liquid?0.12:0;
     for(let fi=0;fi<6;fi++){
       const nf=FACES[fi].n, nb=getBlock(x+nf[0],y+nf[1],z+nf[2]);
@@ -1052,6 +1101,7 @@ const HARDNESS={
   [STONE]:2.2,[COBBLE]:2.2,[STONEBRICK]:2.6,[BRICK]:2.6,
   [COAL]:3,[IRON]:3.2,[GOLD]:3.2,[DIAMOND]:3.6,
   [WHITE]:0.8,[RED]:0.8,[ORANGE]:0.8,[YELLOW]:0.8,[GREEN]:0.8,[BLUE]:0.8,[CYAN]:0.8,[PURPLE]:0.8,[PINK]:0.8,[BLACK]:0.8,
+  [DOOR]:1.2,[DOOR_OPEN]:1.2,
 };
 function hardnessOf(id){ return HARDNESS[id]!=null?HARDNESS[id]:1; }
 
@@ -1116,15 +1166,21 @@ function updateMining(dt){
   if(mineProg>=req){ breakBlock(vox,tool); mineKey=null; mineProg=0; breakBox.visible=false; }
 }
 function doRight(){
+  // interagisci con un villager (commercio)
+  mobRaycaster.set(camera.position, forwardDir());
+  const vmesh=animals.filter(a=>a.type==='villager').map(a=>a.mesh);
+  if(vmesh.length){ const vh=mobRaycaster.intersectObjects(vmesh,true); if(vh.length && vh[0].distance<=REACH){ openTrade(); return; } }
   const vox=raycastVoxel();
   if(!vox) return;
+  // apri/chiudi una porta
+  if(vox.id===DOOR){ editBlock(vox.x,vox.y,vox.z,DOOR_OPEN); return; }
+  if(vox.id===DOOR_OPEN){ editBlock(vox.x,vox.y,vox.z,DOOR); return; }
   const px=vox.x+vox.nx, py=vox.y+vox.ny, pz=vox.z+vox.nz;
   if(getBlock(px,py,pz)!==AIR) return;
   const id=currentBlockId();
   if(id==null||!hasBlock(id)||!BLOCKS[id]) return;   // gli attrezzi non si posizionano
   // non costruire dentro il giocatore
   if(isSolid(id)){
-    const overlapX=px+0.5>player.x-PW-0.5 && px+0.5<player.x+PW+0.5;
     if(px>=Math.floor(player.x-PW)&&px<=Math.floor(player.x+PW)&&
        pz>=Math.floor(player.z-PW)&&pz<=Math.floor(player.z+PW)&&
        py>=Math.floor(player.y)&&py<=Math.floor(player.y+PH-0.001)) return;
@@ -1140,11 +1196,28 @@ function updateSky(){
   const s=sunVal(), dayF=Math.max(0,Math.min(1,(s+1)/2));
   const sky=lerpColor(0x0a1026,0x9ec9ff,dayF);
   scene.background=sky; fog.color=sky;
-  sun.intensity=Math.max(0.05,s)*1.1;
-  ambient.intensity=0.18+dayF*0.45;
-  hemi.intensity=0.15+dayF*0.4;
+  // sottoterra fa buio: le torce servono per vedere
+  const under=Math.max(0, Math.min(1, (2-player.y)/18));
+  sun.intensity=Math.max(0.05,s)*1.1*(1-under*0.9);
+  ambient.intensity=(0.18+dayF*0.45)*(1-under*0.78);
+  hemi.intensity=(0.15+dayF*0.4)*(1-under*0.85);
   const ang=timeOfDay*Math.PI*2;
   sun.position.set(player.x+Math.cos(ang)*60, Math.sin(ang)*80, player.z+30);
+  playerLight.position.set(player.x, player.y+EYE, player.z);
+  playerLight.intensity = under>0.1 ? 0.35+under*0.45 : 0;    // bagliore del minatore
+}
+let torchT=0;
+function updateLights(dt){
+  torchT-=dt; if(torchT>0) return; torchT=0.25;
+  const px=Math.floor(player.x),py=Math.floor(player.y),pz=Math.floor(player.z), R=9;
+  const found=[];
+  for(let y=py-R;y<=py+R;y++)for(let z=pz-R;z<=pz+R;z++)for(let x=px-R;x<=px+R;x++)
+    if(getBlock(x,y,z)===TORCH){ const dx=x-px,dy=y-py,dz=z-pz; found.push({x,y,z,d:dx*dx+dy*dy+dz*dz}); }
+  found.sort((a,b)=>a.d-b.d);
+  for(let i=0;i<torchLights.length;i++){ const L=torchLights[i];
+    if(i<found.length){ L.position.set(found[i].x+0.5,found[i].y+0.6,found[i].z+0.5); L.intensity=1.2; }
+    else L.intensity=0;
+  }
 }
 
 /* ===================== HUD ===================== */
@@ -1282,6 +1355,28 @@ function nearTable(){
   return false;
 }
 function closePanel(){ panelOpen=false; document.getElementById('panel').classList.add('hidden'); }
+function openTrade(){
+  if(mode==='creative'){ toast('In creativa hai già tutto!'); return; }
+  panelOpen=true; document.exitPointerLock?.();
+  document.getElementById('panelTitle').textContent='🧑‍🌾 Commercio col villager';
+  const body=document.getElementById('panelBody'); body.innerHTML='';
+  const note=document.createElement('p'); note.style.cssText='text-align:center;opacity:.7;font-size:.85rem;margin-bottom:14px';
+  note.textContent='Scambia le tue risorse con il villager.'; body.appendChild(note);
+  TRADES.forEach(r=>{
+    const can=Object.entries(r.in).every(([k,v])=>(inv[k]||0)>=v);
+    const row=document.createElement('div'); row.className='recipe '+(can?'can':'cant');
+    const ins=Object.entries(r.in).map(([k,v])=>`${v}× ${nameOf(k)}`).join(' + ');
+    const outs=Object.entries(r.out).map(([k,v])=>`${v}× ${nameOf(k)}`).join(', ');
+    row.innerHTML=`<div class="rname">${ins} → ${outs}</div>`;
+    const btn=document.createElement('button'); btn.className='btn'; btn.textContent='Scambia'; btn.disabled=!can;
+    if(!can){ btn.style.opacity=.5; btn.style.cursor='not-allowed'; }
+    btn.addEventListener('click',()=>{ if(Object.entries(r.in).every(([k,v])=>(inv[k]||0)>=v)){
+      Object.entries(r.in).forEach(([k,v])=>consumeBlock(+k,v)); Object.entries(r.out).forEach(([k,v])=>addBlock(+k,v));
+      toast('Scambiato: '+Object.entries(r.out).map(([k,v])=>`${v}× ${nameOf(k)}`).join(', ')); openTrade(); } });
+    row.appendChild(btn); body.appendChild(row);
+  });
+  document.getElementById('panel').classList.remove('hidden');
+}
 function craft(r){ if(!Object.entries(r.in).every(([k,v])=>(inv[k]||0)>=v))return;
   Object.entries(r.in).forEach(([k,v])=>consumeBlock(+k,v)); Object.entries(r.out).forEach(([k,v])=>addBlock(+k,v));
   toast('Fabbricato: '+Object.entries(r.out).map(([k,v])=>`${v}× ${nameOf(k)}`).join(', ')); }
@@ -1304,6 +1399,7 @@ function loop(ts){
     updateAnimals(dt);
     updateTNT(dt);
     updateMining(dt);
+    updateLights(dt);
     if(rightDown && placeCD<=0){ doRight(); placeCD=0.18; }
     if(placeCD>0)placeCD-=dt;
   } else { camera.position.set(player.x,player.y+EYE,player.z); camera.rotation.set(pitch,yaw,0); hl.visible=false; breakBox.visible=false; }
