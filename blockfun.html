@@ -419,14 +419,76 @@ let mineCD=0, placeCD=0, leftDown=false, rightDown=false;
 const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints>0);
 let paused=false, joyFwd=0, joyStrafe=0;
 const chunks=new Map(); // "cx,cz" -> {solid:Mesh, liquid:Mesh}
+let winMinY=0, winMaxY=WY+1, lastBuildY=null;     // finestra verticale di rendering (profondità infinita)
+const overrides=new Map();                        // blocchi modificati sotto la banda [0,WY)
+const deepCache=new Map();                         // memoizza il sottosuolo generato
+const spawnedVillages=new Set();
 
 const idx=(x,y,z)=> x + z*WX + y*WX*WZ;
+function keyXYZ(x,y,z){ return x+','+y+','+z; }
 function getBlock(x,y,z){
   if(x<0||x>=WX||z<0||z>=WZ) return AIR;
-  if(y<0) return BEDROCK; if(y>=WY) return AIR;
-  return world[idx(x,y,z)];
+  if(y>=WY) return AIR;
+  if(y>=0) return world[idx(x,y,z)];
+  const k=keyXYZ(x,y,z);
+  const o=overrides.get(k); if(o!==undefined) return o;          // modifiche del giocatore
+  let c=deepCache.get(k); if(c===undefined){ c=deepGen(x,y,z); deepCache.set(k,c); }
+  return c;                                                      // sottosuolo procedurale infinito
 }
-function setBlockRaw(x,y,z,id){ if(x>=0&&x<WX&&y>=0&&y<WY&&z>=0&&z<WZ) world[idx(x,y,z)]=id; }
+function setBlockRaw(x,y,z,id){
+  if(x<0||x>=WX||z<0||z>=WZ) return;
+  if(y>=0 && y<WY){ world[idx(x,y,z)]=id; return; }
+  if(y<0) overrides.set(keyXYZ(x,y,z), id);
+}
+
+/* ===== Sottosuolo infinito: grotte, minerali e villaggi ===== */
+const VSP=46;   // spaziatura della griglia dei villaggi
+function villageInfo(gx,gz){
+  if(hash2(gx*13+1,gz*7+5) > 0.14) return null;                 // villaggi rari
+  const ox=gx*VSP + 10 + Math.floor(hash2(gx,gz)*(VSP-20));
+  const oz=gz*VSP + 10 + Math.floor(hash2(gx+9,gz+9)*(VSP-20));
+  const oy=-22 - Math.floor(hash2(gx+3,gz+7)*44);               // profondità -22..-66
+  return {x:ox,y:oy,z:oz};
+}
+function villageCell(vi,x,y,z){
+  const dx=x-vi.x, dz=z-vi.z, dy=y-vi.y, RX=7, RZ=7, H=6;
+  if(dx< -RX||dx>RX||dz< -RZ||dz>RZ||dy< -1||dy>H) return null;
+  if(dy===-1) return COBBLE;                                     // pavimento
+  if(dy===H){ return (Math.abs(dx)<2&&Math.abs(dz)<2)?AIR:COBBLE; } // soffitto con lucernario
+  const edge=(Math.abs(dx)===RX||Math.abs(dz)===RZ);
+  if(edge){ return (Math.abs(dx)<2||Math.abs(dz)<2)?AIR:COBBLE; } // mura con aperture
+  // due capanne di assi
+  for(const cx of [-4,4]){
+    const lx=dx-cx, lz=dz;
+    if(lx>=-1&&lx<=1&&lz>=-1&&lz<=1&&dy<=3){
+      if(dy===3) return PLANKS;
+      if(Math.abs(lx)===1||Math.abs(lz)===1){ if(lx===0&&lz===-1&&dy<=1) return AIR; return PLANKS; }
+      return AIR;
+    }
+  }
+  return AIR;                                                    // piazza del villaggio
+}
+function villageBlock(x,y,z){
+  const gx=Math.floor(x/VSP), gz=Math.floor(z/VSP);
+  for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){
+    const vi=villageInfo(gx+a,gz+b); if(!vi) continue;
+    const r=villageCell(vi,x,y,z); if(r!==null) return r;
+  }
+  return null;
+}
+function deepGen(x,y,z){
+  const vb=villageBlock(x,y,z); if(vb!==null) return vb;
+  const n1=vnoise(x*0.11, z*0.11 - y*0.08);
+  const n2=vnoise(x*0.09 + y*0.07 + 31, z*0.10 + 17);
+  if(n1>0.70 && n2>0.60) return AIR;                             // caverne (rare)
+  const d=-y, r=hash2(x*7+y*13+3, z*5+y*3+7);
+  if(r < 0.006+Math.min(0.02,d*0.0002)) return DIAMOND;          // più diamanti in profondità
+  if(r < 0.03) return GOLD;
+  if(r < 0.07) return IRON;
+  if(r < 0.13) return COAL;
+  if(r < 0.16) return GRAVEL;
+  return STONE;
+}
 
 /* ===================== Generazione ===================== */
 function hash2(x,z){ let h=x*374761393+z*668265263; h=(h^(h>>13))*1274126177; return ((h^(h>>16))>>>0)/4294967296; }
@@ -438,6 +500,7 @@ function vnoise(x,z){
 }
 function genWorld(){
   world=new Uint8Array(WX*WY*WZ);
+  overrides.clear(); deepCache.clear(); spawnedVillages.clear();
   const base=Math.floor(WY*0.42), sea=base-8;   // mare basso: molta più terra ferma
   const hmap=new Int16Array(WX*WZ);
   for(let z=0;z<WZ;z++) for(let x=0;x<WX;x++){
@@ -449,8 +512,7 @@ function genWorld(){
     const top=hmap[x+z*WX], underwater=top<sea;
     for(let y=0;y<=top;y++){
       let id;
-      if(y>=WY-1||y===0) id=BEDROCK;
-      else if(y===top) id=underwater?SAND:(top>base+5?SNOW:GRASS);
+      if(y===top) id=underwater?SAND:(top>base+5?SNOW:GRASS);
       else if(y>top-4) id=underwater?SAND:DIRT;
       else{
         id=STONE; const depth=top-y; const r=hash2(x*7+y*13,z*5+y*3);
@@ -503,6 +565,7 @@ function genWorld(){
   while(sy>0 && getBlock(sx,sy,sz)===AIR) sy--;
   player.x=sx+0.5; player.y=sy+1; player.z=sz+0.5;
   player.vx=player.vy=player.vz=0; player.flying=false;
+  const py=Math.floor(player.y); winMinY=py-64; winMaxY=Math.min(WY+1,py+36); lastBuildY=py;
 }
 
 /* ===================== Mesh dei chunk ===================== */
@@ -532,7 +595,7 @@ function buildChunk(cx,cz){
   const sp=[],sc=[],sn=[],su=[],si=[]; let sv=0;
   const lp=[],lc=[],ln=[],lu=[],li=[]; let lv=0;
   const x0=cx*CH, z0=cz*CH, x1=Math.min(WX,x0+CH), z1=Math.min(WZ,z0+CH);
-  for(let y=0;y<WY;y++) for(let z=z0;z<z1;z++) for(let x=x0;x<x1;x++){
+  for(let y=winMinY;y<=winMaxY;y++) for(let z=z0;z<z1;z++) for(let x=x0;x<x1;x++){
     const id=getBlock(x,y,z);
     if(id===AIR||(BLOCKS[id]&&BLOCKS[id].torch)) continue;
     const trans = BLOCKS[id].liquid || id===GLASS;   // acqua e vetro: passaggio trasparente
@@ -573,6 +636,29 @@ function buildAllChunks(){
   chunks.clear();
   for(let cz=0;cz<Math.ceil(WZ/CH);cz++) for(let cx=0;cx<Math.ceil(WX/CH);cx++) buildChunk(cx,cz);
 }
+// Sposta la finestra verticale di rendering mentre scavi/sali (profondità infinita)
+function updateWindow(force){
+  const py=Math.floor(player.y);
+  if(force || lastBuildY===null || Math.abs(py-lastBuildY)>20){
+    winMinY=py-64; winMaxY=Math.min(WY+1, py+36); lastBuildY=py; buildAllChunks();
+  }
+}
+// Fa comparire i villager quando ti avvicini a un villaggio
+let villageT=0;
+function checkVillages(dt){
+  villageT-=dt; if(villageT>0) return; villageT=0.6;
+  const gx=Math.floor(player.x/VSP), gz=Math.floor(player.z/VSP);
+  for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){
+    const vi=villageInfo(gx+a,gz+b); if(!vi) continue;
+    const key=(gx+a)+','+(gz+b); if(spawnedVillages.has(key)) continue;
+    if(Math.hypot(player.x-vi.x, player.z-vi.z)<22 && Math.abs(player.y-vi.y)<18){
+      spawnedVillages.add(key);
+      const n=2+Math.floor(hash2(gx+a+2,gz+b+4)*2);
+      for(let i=0;i<n;i++) spawnVillager(vi.x+(i-1)+0.5, vi.y, vi.z+((i%2)?1:-1)+0.5);
+      toast('🏘️ Hai trovato un villaggio!');
+    }
+  }
+}
 function editBlock(x,y,z,id){
   setBlockRaw(x,y,z,id);
   const cx=Math.floor(x/CH), cz=Math.floor(z/CH);
@@ -612,7 +698,26 @@ function flowWater(bx,by,bz){
   rebuildSet(set);
 }
 
-/* ===================== Inventario ===================== */
+// Sabbia e ghiaia cadono per gravità
+function isFalling(id){ return id===SAND||id===GRAVEL; }
+function passable(id){ return id===AIR||id===WATER; }
+// Dopo aver svuotato (x,y,z): fa scendere la colonna di cadenti sopra fino a terra
+function settleColumn(x,y,z){
+  if(!isFalling(getBlock(x,y+1,z))) return;
+  let count=0; while(isFalling(getBlock(x,y+1+count,z))) count++;
+  const kinds=[]; for(let i=0;i<count;i++){ kinds.push(getBlock(x,y+1+i,z)); setBlockRaw(x,y+1+i,z,AIR); }
+  let floorY=y; while(floorY>y-96 && passable(getBlock(x,floorY,z))) floorY--;  // primo appoggio sotto
+  const set=new Set();
+  for(let i=0;i<count;i++){ setBlockRaw(x, floorY+1+i, z, kinds[i]); addChunks(set,x,floorY+1+i>=0?z:z); }
+  addChunks(set,x,z);
+  rebuildSet(set);
+}
+// Blocco cadente appena posizionato in aria
+function dropPlaced(x,y,z){
+  const id=getBlock(x,y,z); if(!isFalling(id)) return;
+  let fy=y; while(fy-1>y-96 && passable(getBlock(x,fy-1,z))) fy--;
+  if(fy!==y){ setBlockRaw(x,y,z,AIR); setBlockRaw(x,fy,z,id); const set=new Set(); addChunks(set,x,z); rebuildSet(set); }
+}
 function currentBlockId(){ return mode==='creative'?creativeHotbar[selSlot]:(survOrder[selSlot]!=null?survOrder[selSlot]:null); }
 function hasBlock(id){ return mode==='creative'||inv[id]>0; }
 function addBlock(id,n=1){ if(mode==='creative'||(!BLOCKS[id]&&!ITEMS[id]))return; if(!inv[id]){inv[id]=0;survOrder.push(id);} inv[id]+=n; renderHotbar(); }
@@ -674,8 +779,7 @@ function updatePlayer(dt){
   // limiti orizzontali
   player.x=Math.max(PW+0.01,Math.min(WX-PW-0.01,player.x));
   player.z=Math.max(PW+0.01,Math.min(WZ-PW-0.01,player.z));
-  // caduta nel vuoto
-  if(player.y<-20){ if(mode==='survival'){ player.hp=0; hurtPlayer(0); gameOver(); } else { player.y=WY; player.vy=0; } }
+  // mondo infinito verso il basso: nessun vuoto mortale
 
   if(player.hurtT>0) player.hurtT-=dt;
   if(player.attackT>0) player.attackT-=dt;
@@ -765,6 +869,7 @@ const ANIMAL={
   pig:  { body:0xe89aa0, head:0xe07f88, leg:0xcf757d, bw:0.8, bh:0.55, bl:1.05,hs:0.4,  legH:0.4,  speed:1.5, hp:10, drop:0 },
   sheep:{ body:0xeaeaea, head:0xd8c0a8, leg:0x9a8f86, bw:0.85,bh:0.8,  bl:1.1, hs:0.4,  legH:0.5,  speed:1.2, hp:8,  drop:WHITE },
   horse:{ body:0x8a5a2b, head:0x6e4622, leg:0x4a3420, bw:0.7, bh:0.9,  bl:1.5, hs:0.5,  legH:0.85, speed:2.1, hp:14, drop:0 },
+  villager:{ body:0x6a4a34, head:0xc8a07a, leg:0x3f3026, bw:0.55,bh:0.9,  bl:0.4, hs:0.46, legH:0.75, speed:1.1, hp:12, drop:0, humanoid:true },
 };
 const ANIMAL_TYPES=['cow','pig','sheep','horse'];
 function makeAnimal(type){
@@ -775,14 +880,29 @@ function makeAnimal(type){
   const hp=()=>new THREE.MeshLambertMaterial({map:C._headPlain});
   const headMats=[hp(),hp(),hp(),hp(), new THREE.MeshLambertMaterial({map:C._headFace}), hp()];  // faccia su +Z
   const head=new THREE.Mesh(new THREE.BoxGeometry(C.hs,C.hs,C.hs), headMats);
-  head.position.set(0, C.legH+C.bh*0.85, C.bl/2+C.hs*0.25); g.add(head);
   g.userData.headMats=headMats;
+  if(C.humanoid){
+    head.position.set(0, C.legH+C.bh+C.hs/2, 0); g.add(head);           // testa in cima
+    const nose=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.16,0.14), new THREE.MeshLambertMaterial({map:C._headPlain}));
+    nose.position.set(0, C.legH+C.bh+C.hs*0.45, C.hs/2+0.06); g.add(nose);  // nasone da villager
+    const legGeo=new THREE.BoxGeometry(0.18,C.legH,0.2), lm=()=>new THREE.MeshLambertMaterial({map:C._leg});
+    for(const sx of [-0.14,0.14]){ const l=new THREE.Mesh(legGeo,lm()); l.position.set(sx,C.legH/2,0); g.add(l); }
+    return g;
+  }
+  head.position.set(0, C.legH+C.bh*0.85, C.bl/2+C.hs*0.25); g.add(head);
   const legGeo=new THREE.BoxGeometry(0.16,C.legH,0.16);
   const lx=C.bw/2-0.1, lz=C.bl/2-0.15;
   for(const [sx,sz] of [[-lx,-lz],[lx,-lz],[-lx,lz],[lx,lz]]){
     const l=new THREE.Mesh(legGeo,new THREE.MeshLambertMaterial({map:C._leg})); l.position.set(sx,C.legH/2,sz); g.add(l);
   }
   return g;
+}
+function spawnVillager(x,y,z){
+  const def=ANIMAL.villager, mesh=makeAnimal('villager');
+  const a={ kind:'animal', type:'villager', def, x, y, z, vy:0, hp:def.hp, hurtT:0,
+            flee:0, hx:0, hz:0, heading:Math.random()*Math.PI*2, wander:1, moving:true, drop:0, keep:true };
+  mesh.position.set(a.x,a.y,a.z); mesh.userData.creature=a; scene.add(mesh); a.mesh=mesh;
+  animals.push(a);
 }
 function boxCollides(x,y,z){ const r=0.42,h=1.0;
   for(let yy=Math.floor(y);yy<=Math.floor(y+h-0.01);yy++)
@@ -826,7 +946,7 @@ function updateAnimals(dt){
     if(hx||hz) a.mesh.rotation.y=Math.atan2(hx,hz);
     a.mesh.position.set(a.x,a.y,a.z);
     const fl=a.hurtT>0; const hm=a.mesh.userData.headMats; if(hm) for(const mm of hm) mm.color.setHex(fl?0xff7777:0xffffff);
-    if(a.y<-20 || Math.hypot(a.x-player.x,a.z-player.z)>72){ scene.remove(a.mesh); animals.splice(i,1); }
+    if(!a.keep && (Math.hypot(a.x-player.x,a.z-player.z)>72 || a.y<player.y-90)){ scene.remove(a.mesh); animals.splice(i,1); }
   }
 }
 
@@ -944,6 +1064,7 @@ function breakBlock(vox,tool){
     const hasPick=tool&&tool.cat==='pick';
     if(!needsPick||hasPick) addBlock(dropOf(vox.id));   // pietra/minerali: serve il piccone per il drop
   }
+  settleColumn(vox.x,vox.y,vox.z);   // sabbia/ghiaia sopra cadono nel vuoto
   if(vox.id!==WATER && waterTouches(vox.x,vox.y,vox.z)) flowWater(vox.x,vox.y,vox.z);  // l'acqua si espande nel vuoto
 }
 // Clic/tocco singolo: attacca una creatura o innesca la TNT (azioni istantanee)
@@ -1008,7 +1129,7 @@ function doRight(){
        pz>=Math.floor(player.z-PW)&&pz<=Math.floor(player.z+PW)&&
        py>=Math.floor(player.y)&&py<=Math.floor(player.y+PH-0.001)) return;
   }
-  editBlock(px,py,pz,id); consumeBlock(id);
+  editBlock(px,py,pz,id); consumeBlock(id); dropPlaced(px,py,pz);
 }
 
 /* ===================== Cielo / luce ===================== */
@@ -1177,6 +1298,8 @@ function loop(ts){
     timeOfDay+=dt/DAY_LENGTH; if(timeOfDay>=1){ timeOfDay-=1; dayCount++; }
     const night=isNight();
     updatePlayer(dt);
+    updateWindow(false);
+    checkVillages(dt);
     updateMobs(dt,night);
     updateAnimals(dt);
     updateTNT(dt);
