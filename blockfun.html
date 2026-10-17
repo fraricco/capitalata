@@ -740,29 +740,44 @@ function waterTouches(x,y,z){
   return getBlock(x+1,y,z)===WATER||getBlock(x-1,y,z)===WATER||getBlock(x,y,z+1)===WATER||getBlock(x,y,z-1)===WATER||getBlock(x,y+1,z)===WATER;
 }
 // Espansione locale dell'acqua dopo aver rotto un blocco vicino all'acqua
-function flowWater(bx,by,bz){
-  const R=6, topY=Math.min(WY-1,by+2), botY=Math.max(1,by-22);
-  const set=new Set();
-  let active=true, passes=0;
-  while(active && passes<28){
-    active=false; passes++;
-    for(let y=topY;y>=botY;y--){
-      for(let z=bz-R;z<=bz+R;z++) for(let x=bx-R;x<=bx+R;x++){
-        if(x<1||x>=WX-1||z<1||z>=WZ-1) continue;
-        if(getBlock(x,y,z)!==AIR) continue;
-        let fill=false;
-        if(getBlock(x,y+1,z)===WATER) fill=true;                 // caduta verticale (senza limite di raggio)
-        else if(Math.abs(x-bx)+Math.abs(z-bz)<=R){               // scorrimento laterale entro il raggio
-          if(getBlock(x+1,y,z)===WATER||getBlock(x-1,y,z)===WATER||getBlock(x,y,z+1)===WATER||getBlock(x,y,z-1)===WATER) fill=true;
+// Liquidi che scorrono (animati): acqua veloce e lontana, lava lenta e corta
+let flows=[];
+function startFlow(x,y,z){
+  const id=getBlock(x,y,z); if(id!==WATER && id!==LAVA) return;
+  const cfg = id===WATER ? {interval:0.06,maxDist:7} : {interval:0.42,maxDist:3};
+  flows.push({ id, interval:cfg.interval, maxDist:cfg.maxDist, timer:0, frontier:[{x,y,z,d:0}], visited:new Set([x+','+y+','+z]) });
+  if(flows.length>14) flows.shift();
+}
+// reazioni acqua/lava quando un liquido invade una cella; true = cella consumata
+function flowReact(x,y,z,id,set){
+  const nb=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+  if(id===WATER){ let r=false; for(const n of nb){ if(getBlock(x+n[0],y+n[1],z+n[2])===LAVA){ setBlockRaw(x+n[0],y+n[1],z+n[2],OBSIDIAN); addChunks(set,x+n[0],z+n[2]); r=true; } } if(r) return true; }
+  if(id===LAVA){ for(const n of nb){ if(getBlock(x+n[0],y+n[1],z+n[2])===WATER){ setBlockRaw(x,y,z,COBBLE); addChunks(set,x,z); return true; } } }
+  return false;
+}
+function updateFlows(dt){
+  for(let i=flows.length-1;i>=0;i--){ const j=flows[i]; j.timer-=dt; if(j.timer>0) continue; j.timer=j.interval;
+    const next=[], set=new Set();
+    for(const c of j.frontier){
+      if(getBlock(c.x,c.y-1,c.z)===AIR){                       // scende (ripartendo a raggio 0)
+        const k=c.x+','+(c.y-1)+','+c.z;
+        if(!j.visited.has(k)){ j.visited.add(k);
+          if(!flowReact(c.x,c.y-1,c.z,j.id,set)){ setBlockRaw(c.x,c.y-1,c.z,j.id); addChunks(set,c.x,c.z); next.push({x:c.x,y:c.y-1,z:c.z,d:0}); } }
+      } else {                                                  // si allarga di lato entro il raggio
+        for(const dd of [[1,0],[-1,0],[0,1],[0,-1]]){
+          if(c.d+1>j.maxDist) continue; const nx=c.x+dd[0], nz=c.z+dd[1], k=nx+','+c.y+','+nz;
+          if(j.visited.has(k) || getBlock(nx,c.y,nz)!==AIR) continue;
+          j.visited.add(k);
+          if(!flowReact(nx,c.y,nz,j.id,set)){ setBlockRaw(nx,c.y,nz,j.id); addChunks(set,nx,nz); next.push({x:nx,y:c.y,z:nz,d:c.d+1}); }
         }
-        if(fill){ setBlockRaw(x,y,z,WATER); addChunks(set,x,z); active=true; }
       }
     }
+    if(set.size) rebuildSet(set);
+    j.frontier=next;
+    if(next.length===0 || j.visited.size>3000) flows.splice(i,1);
   }
-  rebuildSet(set);
-  reactLiquids(bx,by,bz,R);
 }
-// Acqua + lava: la lava a contatto con l'acqua diventa ossidiana
+// Acqua + lava statiche adiacenti: la lava diventa ossidiana
 function reactLiquids(bx,by,bz,R){
   const set=new Set(); let any=false;
   for(let y=by-R;y<=by+R;y++)for(let z=bz-R;z<=bz+R;z++)for(let x=bx-R;x<=bx+R;x++){
@@ -1158,7 +1173,10 @@ function breakBlock(vox,tool){
     if(vox.id===GRASS && Math.random()<0.35) addBlock(WHEAT);   // l'erba a volte dà grano
   }
   settleColumn(vox.x,vox.y,vox.z);   // sabbia/ghiaia sopra cadono nel vuoto
-  if(vox.id!==WATER && waterTouches(vox.x,vox.y,vox.z)) flowWater(vox.x,vox.y,vox.z);  // l'acqua si espande nel vuoto
+  // i liquidi adiacenti iniziano a scorrere nel vuoto creato
+  for(const n of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]]){
+    const b=getBlock(vox.x+n[0],vox.y+n[1],vox.z+n[2]); if(b===WATER||b===LAVA) startFlow(vox.x+n[0],vox.y+n[1],vox.z+n[2]);
+  }
   reactLiquids(vox.x,vox.y,vox.z,2);   // acqua+lava → ossidiana
 }
 // Clic/tocco singolo: attacca una creatura o innesca la TNT (azioni istantanee)
@@ -1253,8 +1271,7 @@ function placeLiquid(liq){
   if(getBlock(px,py,pz)!==AIR) return false;
   const wn=(getBlock(px+1,py,pz)===WATER||getBlock(px-1,py,pz)===WATER||getBlock(px,py,pz+1)===WATER||getBlock(px,py,pz-1)===WATER||getBlock(px,py+1,pz)===WATER||getBlock(px,py-1,pz)===WATER);
   if(liq===LAVA && wn){ editBlock(px,py,pz,COBBLE); }   // lava sull'acqua → ciottolo
-  else { editBlock(px,py,pz,liq);
-    if(liq===WATER) flowWater(px,py,pz); }
+  else { editBlock(px,py,pz,liq); startFlow(px,py,pz); }   // il liquido inizia a scorrere
   consumeBlock(liq===WATER?WATER_BUCKET:LAVA_BUCKET); addBlock(BUCKET);
   return true;
 }
@@ -1499,6 +1516,7 @@ function loop(ts){
     updateAnimals(dt);
     updateTNT(dt);
     updateMining(dt);
+    updateFlows(dt);
     updateLights(dt);
     if(rightDown && placeCD<=0){ doRight(); placeCD=0.18; }
     if(placeCD>0)placeCD-=dt;
@@ -1515,6 +1533,7 @@ function clearScene(){
   for(const a of animals){ scene.remove(a.mesh); } animals=[];
   for(const t of tnts){ scene.remove(t.mesh); } tnts=[];
   for(const f of fx){ scene.remove(f.mesh); } fx=[];
+  flows=[];
 }
 function startGame(m){
   mode=m;
