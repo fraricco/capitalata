@@ -550,16 +550,24 @@ function genWorld(){
   overrides.clear(); deepCache.clear(); spawnedVillages.clear();
   const base=Math.floor(WY*0.42), sea=base-8;   // mare basso: molta più terra ferma
   const hmap=new Int16Array(WX*WZ);
+  const bump=(x,z,cx,cz,R,H)=>{ const d=Math.hypot(x-cx,z-cz); if(d>=R) return 0; const t=1-d/R; return H*t*t; };
   for(let z=0;z<WZ;z++) for(let x=0;x<WX;x++){
     let h=base+3 + (vnoise(x*0.06,z*0.06)-0.5)*13 + (vnoise(x*0.15+9,z*0.15+9)-0.5)*6;
-    h=Math.max(4,Math.min(WY-10,Math.round(h)));
+    // montagne in due angoli opposti (contenute)
+    let m=bump(x,z,3,3,26,15)+bump(x,z,WX-4,WZ-4,26,15);
+    if(m>1) m+=(vnoise(x*0.22,z*0.22)-0.5)*7;   // cresta rocciosa
+    h+=m;
+    // praterie: alcune zone vengono appiattite (pianure erbose)
+    const plain=vnoise(x*0.035+40, z*0.035+40);
+    if(plain>0.62 && m<2) h=base+2+(h-base)*0.35;
+    h=Math.max(4,Math.min(WY-9,Math.round(h)));
     hmap[x+z*WX]=h;
   }
   for(let z=0;z<WZ;z++) for(let x=0;x<WX;x++){
     const top=hmap[x+z*WX], underwater=top<sea;
     for(let y=0;y<=top;y++){
       let id;
-      if(y===top) id=underwater?SAND:(top>base+5?SNOW:GRASS);
+      if(y===top) id=underwater?SAND:(top>base+13?SNOW:(top>base+9?STONE:GRASS));
       else if(y>top-4) id=underwater?SAND:DIRT;
       else{
         id=STONE; const depth=top-y; const r=hash2(x*7+y*13,z*5+y*3);
@@ -1012,7 +1020,7 @@ function boxCollides(x,y,z){ const r=0.42,h=1.0;
   return false;
 }
 function spawnAnimal(){
-  if(animals.length>=10) return;
+  if(animals.length>=16) return;
   const type=ANIMAL_TYPES[Math.floor(Math.random()*ANIMAL_TYPES.length)];
   const ang=Math.random()*Math.PI*2, dist=8+Math.random()*16;
   const x=Math.round(player.x+Math.cos(ang)*dist), z=Math.round(player.z+Math.sin(ang)*dist);
@@ -1046,7 +1054,7 @@ function updateAnimals(dt){
     if(Math.random()<chance && !animals.some(a=>a.type==='bigfoot')) spawnBigfoot();
   } }
   animalTimer-=dt;
-  if(animalTimer<=0){ if(animals.length<10) spawnAnimal(); animalTimer=3+Math.random()*5; }
+  if(animalTimer<=0){ if(animals.length<16) spawnAnimal(); animalTimer=2+Math.random()*4; }
   for(let i=animals.length-1;i>=0;i--){
     const a=animals[i], def=a.def;
     if(a.hurtT>0) a.hurtT-=dt;
