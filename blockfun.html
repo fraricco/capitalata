@@ -968,7 +968,8 @@ const ANIMAL={
   pig:  { body:0xe89aa0, head:0xe07f88, leg:0xcf757d, bw:0.8, bh:0.55, bl:1.05,hs:0.4,  legH:0.4,  speed:1.5, hp:10, drop:0 },
   sheep:{ body:0xeaeaea, head:0xd8c0a8, leg:0x9a8f86, bw:0.85,bh:0.8,  bl:1.1, hs:0.4,  legH:0.5,  speed:1.2, hp:8,  drop:WHITE },
   horse:{ body:0x8a5a2b, head:0x6e4622, leg:0x4a3420, bw:0.7, bh:0.9,  bl:1.5, hs:0.5,  legH:0.85, speed:2.1, hp:14, drop:0 },
-  villager:{ body:0x6a4a34, head:0xc8a07a, leg:0x3f3026, bw:0.55,bh:0.9,  bl:0.4, hs:0.46, legH:0.75, speed:1.1, hp:12, drop:0, humanoid:true },
+  villager:{ body:0x6a4a34, head:0xc8a07a, leg:0x3f3026, bw:0.55,bh:0.9,  bl:0.4, hs:0.46, legH:0.75, speed:1.1, hp:12, drop:0, humanoid:true, nose:true },
+  bigfoot:{ body:0x4a3524, head:0x3c2a1c, leg:0x3c2a1c, bw:0.8, bh:1.4,  bl:0.55,hs:0.6,  legH:1.3,  speed:1.0, hp:40, drop:0, humanoid:true },
 };
 const ANIMAL_TYPES=['cow','pig','sheep','horse'];
 function makeAnimal(type){
@@ -982,8 +983,8 @@ function makeAnimal(type){
   g.userData.headMats=headMats;
   if(C.humanoid){
     head.position.set(0, C.legH+C.bh+C.hs/2, 0); g.add(head);           // testa in cima
-    const nose=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.16,0.14), new THREE.MeshLambertMaterial({map:C._headPlain}));
-    nose.position.set(0, C.legH+C.bh+C.hs*0.45, C.hs/2+0.06); g.add(nose);  // nasone da villager
+    if(C.nose){ const nose=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.16,0.14), new THREE.MeshLambertMaterial({map:C._headPlain}));
+      nose.position.set(0, C.legH+C.bh+C.hs*0.45, C.hs/2+0.06); g.add(nose); }  // nasone da villager
     const legGeo=new THREE.BoxGeometry(0.18,C.legH,0.2), lm=()=>new THREE.MeshLambertMaterial({map:C._leg});
     for(const sx of [-0.14,0.14]){ const l=new THREE.Mesh(legGeo,lm()); l.position.set(sx,C.legH/2,0); g.add(l); }
     return g;
@@ -1027,7 +1028,23 @@ function spawnAnimalAt(type,x,y,z){
   mesh.position.set(a.x,a.y,a.z); mesh.userData.creature=a; scene.add(mesh); a.mesh=mesh;
   animals.push(a);
 }
+// Bigfoot: raro, di notte, quasi solo in creativa; passivo e innocuo, sparisce all'alba
+let bigfootTimer=12;
+function spawnBigfoot(){
+  const ang=Math.random()*Math.PI*2, dist=14+Math.random()*12;
+  const x=Math.round(player.x+Math.cos(ang)*dist), z=Math.round(player.z+Math.sin(ang)*dist);
+  if(x<1||x>=WX-1||z<1||z>=WZ-1) return;
+  let y=WY-1; while(y>0 && getBlock(x,y,z)===AIR) y--;
+  if(!isSolid(getBlock(x,y,z))) return;
+  spawnAnimalAt('bigfoot', x+0.5, y+1, z+0.5);
+  toast('👣 ...qualcosa di grosso si muove nel buio');
+}
 function updateAnimals(dt){
+  const night=isNight();
+  if(night){ bigfootTimer-=dt; if(bigfootTimer<=0){ bigfootTimer=18+Math.random()*22;
+    const chance = mode==='creative'?0.5:0.04;   // quasi solo in creativa
+    if(Math.random()<chance && !animals.some(a=>a.type==='bigfoot')) spawnBigfoot();
+  } }
   animalTimer-=dt;
   if(animalTimer<=0){ if(animals.length<10) spawnAnimal(); animalTimer=3+Math.random()*5; }
   for(let i=animals.length-1;i>=0;i--){
@@ -1049,6 +1066,7 @@ function updateAnimals(dt){
     if(hx||hz) a.mesh.rotation.y=Math.atan2(hx,hz);
     a.mesh.position.set(a.x,a.y,a.z);
     const fl=a.hurtT>0; const hm=a.mesh.userData.headMats; if(hm) for(const mm of hm) mm.color.setHex(fl?0xff7777:0xffffff);
+    if(a.type==='bigfoot' && !night){ scene.remove(a.mesh); animals.splice(i,1); continue; }  // sparisce all'alba
     if(!a.keep && (Math.hypot(a.x-player.x,a.z-player.z)>72 || a.y<player.y-90)){ scene.remove(a.mesh); animals.splice(i,1); }
   }
 }
