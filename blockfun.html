@@ -206,7 +206,7 @@ const AIR=0, GRASS=1, DIRT=2, STONE=3, LOG=4, LEAVES=5, SAND=6, WATER=7,
       PLANKS=8, GLASS=9, COAL=10, IRON=11, GOLD=12, DIAMOND=13, COBBLE=14,
       BEDROCK=15, TABLE=16, BRICK=17, TORCH=18, SNOW=19, CACTUS=20, TNT=21,
       STONEBRICK=22, CLAY=23, GRAVEL=24, WHITE=25, RED=26, ORANGE=27, YELLOW=28,
-      GREEN=29, BLUE=30, CYAN=31, PURPLE=32, PINK=33, BLACK=34, DOOR=35, DOOR_OPEN=36, LAVA=37;
+      GREEN=29, BLUE=30, CYAN=31, PURPLE=32, PINK=33, BLACK=34, DOOR=35, DOOR_OPEN=36, LAVA=37, OBSIDIAN=38;
 
 const BLOCKS = {
   [GRASS]:{ name:"Erba",   top:"#6ab150", side:"#7a5a32", bottom:"#8a5a2b" },
@@ -246,6 +246,7 @@ const BLOCKS = {
   [DOOR]:{ name:"Porta",      all:"#9a6a3a" },
   [DOOR_OPEN]:{ name:"Porta aperta", all:"#9a6a3a", passable:true },
   [LAVA]:{ name:"Lava",       all:"#e2550f", liquid:true, light:true },
+  [OBSIDIAN]:{ name:"Ossidiana", all:"#1c1626" },
 };
 function isSolid(id){ return id!==AIR && BLOCKS[id] && !BLOCKS[id].liquid && !BLOCKS[id].torch && !BLOCKS[id].passable; }
 function isOpaque(id){ return isSolid(id) && id!==GLASS && id!==LEAVES; }
@@ -253,7 +254,7 @@ function dropOf(id){ if(id===GRASS) return DIRT; if(id===STONE) return COBBLE; i
 
 const PALETTE=[GRASS,DIRT,STONE,COBBLE,STONEBRICK,BRICK,CLAY,GRAVEL,LOG,PLANKS,DOOR,LEAVES,SAND,GLASS,TABLE,TORCH,SNOW,CACTUS,TNT,
   COAL,IRON,GOLD,DIAMOND,
-  WHITE,RED,ORANGE,YELLOW,GREEN,BLUE,CYAN,PURPLE,PINK,BLACK];
+  WHITE,RED,ORANGE,YELLOW,GREEN,BLUE,CYAN,PURPLE,PINK,BLACK,OBSIDIAN];
 const RECIPES=[
   { name:"Assi di legno",  in:{[LOG]:1},             out:{[PLANKS]:4} },
   { name:"Banco da lavoro",in:{[PLANKS]:4},          out:{[TABLE]:1} },
@@ -310,7 +311,7 @@ TOOL_TIERS.forEach((tr,ti)=> TOOL_TYPES.forEach((ty,si)=>{
   TOOL_RECIPES.push({ name:ITEMS[id].name, in:{[tr.mat]:matN,[STICK]:stickN}, out:{[id]:1} });
 }));
 
-const PICK_BLOCKS=[STONE,COBBLE,STONEBRICK,BRICK,COAL,IRON,GOLD,DIAMOND];
+const PICK_BLOCKS=[STONE,COBBLE,STONEBRICK,BRICK,COAL,IRON,GOLD,DIAMOND,OBSIDIAN];
 const AXE_BLOCKS=[LOG,PLANKS,TABLE];
 const SHOVEL_BLOCKS=[DIRT,GRASS,SAND,GRAVEL,CLAY,SNOW];
 function nameOf(id){ return (BLOCKS[id]&&BLOCKS[id].name) || (ITEMS[id]&&ITEMS[id].name) || '?'; }
@@ -364,6 +365,7 @@ const BLOCKTILE={};
     }
     if(id===WATER){ for(let y=0;y<TS;y++)for(let x=0;x<TS;x++){ const d=(Math.random()*2-1)*12; put(ox,oy,x,y,bc[0]+d,bc[1]+d,bc[2]+d,0.62);} return; }
     if(id===LAVA){ for(let y=0;y<TS;y++)for(let x=0;x<TS;x++){ const d=(Math.random()*2-1)*28; put(ox,oy,x,y,bc[0]+d,bc[1]+Math.max(0,d*0.4),bc[2],1);} for(let i=0;i<8;i++) put(ox,oy,(Math.random()*TS)|0,(Math.random()*TS)|0,255,230,120,1); return; }
+    if(id===OBSIDIAN){ noise(ox,oy,base,10); for(let i=0;i<6;i++){ const x=(Math.random()*TS)|0,y=(Math.random()*TS)|0; put(ox,oy,x,y,120,70,160,0.5); } return; }
     const amp=(id===STONE||id===COBBLE)?20:(id===SAND||id===SNOW)?9:14;
     noise(ox,oy,base,amp);
     if(id===GRASS){
@@ -758,6 +760,19 @@ function flowWater(bx,by,bz){
     }
   }
   rebuildSet(set);
+  reactLiquids(bx,by,bz,R);
+}
+// Acqua + lava: la lava a contatto con l'acqua diventa ossidiana
+function reactLiquids(bx,by,bz,R){
+  const set=new Set(); let any=false;
+  for(let y=by-R;y<=by+R;y++)for(let z=bz-R;z<=bz+R;z++)for(let x=bx-R;x<=bx+R;x++){
+    if(getBlock(x,y,z)!==LAVA) continue;
+    if(getBlock(x+1,y,z)===WATER||getBlock(x-1,y,z)===WATER||getBlock(x,y,z+1)===WATER||
+       getBlock(x,y,z-1)===WATER||getBlock(x,y+1,z)===WATER||getBlock(x,y-1,z)===WATER){
+      setBlockRaw(x,y,z,OBSIDIAN); addChunks(set,x,z); any=true;
+    }
+  }
+  if(any) rebuildSet(set);
 }
 
 // Sabbia e ghiaia cadono per gravità
@@ -1125,7 +1140,7 @@ const HARDNESS={
   [STONE]:2.2,[COBBLE]:2.2,[STONEBRICK]:2.6,[BRICK]:2.6,
   [COAL]:3,[IRON]:3.2,[GOLD]:3.2,[DIAMOND]:3.6,
   [WHITE]:0.8,[RED]:0.8,[ORANGE]:0.8,[YELLOW]:0.8,[GREEN]:0.8,[BLUE]:0.8,[CYAN]:0.8,[PURPLE]:0.8,[PINK]:0.8,[BLACK]:0.8,
-  [DOOR]:1.2,[DOOR_OPEN]:1.2,
+  [DOOR]:1.2,[DOOR_OPEN]:1.2,[OBSIDIAN]:9,
 };
 function hardnessOf(id){ return HARDNESS[id]!=null?HARDNESS[id]:1; }
 
@@ -1134,13 +1149,17 @@ function resetMining(){ mineKey=null; mineProg=0; breakBox.visible=false; }
 function breakBlock(vox,tool){
   editBlock(vox.x,vox.y,vox.z,AIR);
   if(mode==='survival'){
-    const needsPick=PICK_BLOCKS.includes(vox.id);
     const hasPick=tool&&tool.cat==='pick';
-    if(!needsPick||hasPick) addBlock(dropOf(vox.id));   // pietra/minerali: serve il piccone per il drop
+    if(vox.id===OBSIDIAN){ if(hasPick && tool.tier>=4) addBlock(OBSIDIAN); }   // ossidiana: serve piccone di diamante
+    else {
+      const needsPick=PICK_BLOCKS.includes(vox.id);
+      if(!needsPick||hasPick) addBlock(dropOf(vox.id));   // pietra/minerali: serve il piccone per il drop
+    }
     if(vox.id===GRASS && Math.random()<0.35) addBlock(WHEAT);   // l'erba a volte dà grano
   }
   settleColumn(vox.x,vox.y,vox.z);   // sabbia/ghiaia sopra cadono nel vuoto
   if(vox.id!==WATER && waterTouches(vox.x,vox.y,vox.z)) flowWater(vox.x,vox.y,vox.z);  // l'acqua si espande nel vuoto
+  reactLiquids(vox.x,vox.y,vox.z,2);   // acqua+lava → ossidiana
 }
 // Clic/tocco singolo: attacca una creatura o innesca la TNT (azioni istantanee)
 function doPrimaryClick(){
@@ -1232,8 +1251,10 @@ function placeLiquid(liq){
   const v=raycastVoxel(); if(!v) return false;
   const px=v.x+v.nx, py=v.y+v.ny, pz=v.z+v.nz;
   if(getBlock(px,py,pz)!==AIR) return false;
-  editBlock(px,py,pz,liq);
-  if(liq===WATER) flowWater(px,py,pz);
+  const wn=(getBlock(px+1,py,pz)===WATER||getBlock(px-1,py,pz)===WATER||getBlock(px,py,pz+1)===WATER||getBlock(px,py,pz-1)===WATER||getBlock(px,py+1,pz)===WATER||getBlock(px,py-1,pz)===WATER);
+  if(liq===LAVA && wn){ editBlock(px,py,pz,COBBLE); }   // lava sull'acqua → ciottolo
+  else { editBlock(px,py,pz,liq);
+    if(liq===WATER) flowWater(px,py,pz); }
   consumeBlock(liq===WATER?WATER_BUCKET:LAVA_BUCKET); addBlock(BUCKET);
   return true;
 }
