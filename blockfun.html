@@ -110,7 +110,7 @@
   <div id="hearts"></div>
   <div id="topRight">
     <button id="menuBtn">☰ Menu</button>
-    <div id="clock"><span class="day">Giorno 1</span><br><span id="phase">Giorno</span></div>
+    <div id="clock"><span class="day">Giorno 1</span><br><span id="phase">Giorno</span><br><span id="coords" style="font-size:.8rem;opacity:.85"></span></div>
   </div>
 </div>
 <div id="hotbar" class="hidden"></div>
@@ -1320,6 +1320,10 @@ function renderClock(){
   if(s<-0.15)p="🌙 Notte"; else if(s<0.15)p=timeOfDay<0.5?"🌅 Alba":"🌇 Tramonto";
   document.querySelector('#clock .day').textContent="Giorno "+dayCount;
   document.getElementById('phase').textContent=p;
+  // posizione e direzione (Nord=-Z, Sud=+Z, Est=+X, Ovest=-X)
+  const fx=-Math.sin(yaw), fz=-Math.cos(yaw);
+  let dir; if(Math.abs(fx)>Math.abs(fz)) dir=fx>0?'Est ➡️':'Ovest ⬅️'; else dir=fz>0?'Sud ⬇️':'Nord ⬆️';
+  document.getElementById('coords').textContent='X '+Math.round(player.x)+'  Y '+Math.round(player.y)+'  Z '+Math.round(player.z)+' · '+dir;
 }
 function drawCubeIcon(id,size){
   const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d');
