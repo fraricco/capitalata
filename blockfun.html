@@ -1061,6 +1061,10 @@ function updateAnimals(dt){
     if(a.love>0) a.love-=dt; if(a.breedCD>0) a.breedCD-=dt;
     let hx=0,hz=0,sp=0;
     if(a.flee>0){ a.flee-=dt; hx=a.hx; hz=a.hz; sp=def.speed*1.9; }
+    else if(a.type==='bigfoot'){                 // il Bigfoot ti viene incontro (ma non fa niente)
+      const dx=player.x-a.x, dz=player.z-a.z, d=Math.hypot(dx,dz)||1;
+      if(d>1.4){ hx=dx/d; hz=dz/d; sp=def.speed; }
+    }
     else { a.wander-=dt; if(a.wander<=0){ a.moving=Math.random()<0.7; a.heading=Math.random()*Math.PI*2; a.wander=2+Math.random()*4; }
       if(a.moving){ hx=Math.sin(a.heading); hz=Math.cos(a.heading); sp=def.speed; } }
     let blocked=false;
