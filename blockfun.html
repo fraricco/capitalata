@@ -1417,6 +1417,7 @@ function updateSky(){
   const drift=performance.now()*0.0013;
   for(const m of clouds){ let x=((m.userData.bx+drift)%CLOUD_SPAN+CLOUD_SPAN)%CLOUD_SPAN-30; m.position.x=x; }
   cloudMat.opacity=0.2+dayF*0.65;
+  cloudMat.color.setHex(0xffffff).lerp(new THREE.Color(0xff9ec6), twi);   // nuvole rosa all'alba/tramonto
   stars.position.set(player.x,player.y,player.z);
   starMat.opacity=Math.max(0,-s)*0.9;
   playerLight.position.set(player.x, player.y+EYE, player.z);
