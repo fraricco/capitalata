@@ -1482,6 +1482,19 @@ function drawToolIcon(id,size){
   return c;
 }
 function iconFor(id,size){ return (id>=100)?drawToolIcon(id,size):drawCubeIcon(id,size); }
+// icone pixel-art per i pulsanti touch
+function drawBtnIcon(name,size){
+  const o=document.createElement('canvas'); o.width=o.height=16; const p=o.getContext('2d');
+  const R=(x0,y0,x1,y1,c)=>{p.fillStyle=c;p.fillRect(x0,y0,x1-x0+1,y1-y0+1);};
+  const P=(x,y,c)=>{p.fillStyle=c;p.fillRect(x,y,1,1);};
+  if(name==='mine'){ R(7,5,8,14,'#6e4a28'); R(3,3,12,3,'#d2d2d2'); P(3,4,'#d2d2d2');P(4,4,'#d2d2d2');P(11,4,'#d2d2d2');P(12,4,'#d2d2d2'); }
+  else if(name==='place'){ R(3,5,12,13,'#8a5a2b'); R(3,3,12,5,'#6ab150'); P(5,9,'rgba(0,0,0,.25)');P(9,11,'rgba(0,0,0,.25)'); }
+  else if(name==='jump'){ const c='#eaf6ff'; R(7,3,8,14,c); P(7,2,c);P(8,2,c);P(6,3,c);P(9,3,c);P(5,4,c);P(10,4,c);P(4,5,c);P(11,5,c); }
+  else if(name==='down'){ const c='#eaf6ff'; R(7,1,8,12,c); P(7,13,c);P(8,13,c);P(6,12,c);P(9,12,c);P(5,11,c);P(10,11,c);P(4,10,c);P(11,10,c); }
+  else if(name==='fly'){ const c='#bfe6ff'; R(2,9,6,10,c); R(9,9,13,10,c); R(4,7,6,8,c); R(9,7,11,8,c); P(7,6,c);P(8,6,c); }
+  else if(name==='inv'){ R(3,5,12,13,'#9c6b3f'); R(3,5,12,6,'#b5894e'); R(3,8,12,8,'#5a3b22'); P(7,9,'#d8c24a');P(8,9,'#d8c24a'); }
+  const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); g.imageSmoothingEnabled=false; g.drawImage(o,0,0,16,16,0,0,size,size); return c;
+}
 function renderHotbar(){
   const bar=document.getElementById('hotbar'); bar.innerHTML='';
   if(mode==='creative'){ creativeHotbar.forEach((id,i)=>bar.appendChild(makeSlot(id,null,i,i<9?i+1:null))); }
@@ -1766,6 +1779,10 @@ if(isTouch){
   bind('tbDown',()=>{ keys['shift']=true; },()=>{ keys['shift']=false; });
   bind('tbFly',()=>{ if(mode==='creative'){ player.flying=!player.flying; player.vy=0; updateTouchAux(); toast(player.flying?'Volo attivato':'Volo disattivato'); } });
   bind('tbInv',()=>{ togglePanel(); });
+  // icone pixel-art al posto delle emoji sui pulsanti
+  [['tbMine','mine'],['tbPlace','place'],['tbJump','jump'],['tbDown','down'],['tbFly','fly'],['tbInv','inv']].forEach(([id,n])=>{
+    const el=document.getElementById(id); if(el){ el.textContent=''; el.appendChild(drawBtnIcon(n,34)); }
+  });
 }
 
 })(); }
