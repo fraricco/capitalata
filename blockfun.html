@@ -1029,58 +1029,59 @@ function reactLiquids(bx,by,bz,R){
   if(any) rebuildSet(set);
 }
 
-// ===== Fuoco: l'acciarino accende i blocchi infiammabili, il fuoco si propaga =====
+// ===== Fuoco: l'acciarino accende ovunque; sul legno divampa, sulla pietra resta fermo =====
 let fires=[];
-function fireKey(x,y,z){ return x+','+y+','+z; }
 function hasFireAt(x,y,z){ for(const f of fires) if(f.x===x&&f.y===y&&f.z===z) return true; return false; }
-// Mette una fiamma nella cella (x,y,z) se è aria/fuoco e poggia su qualcosa di infiammabile vicino
+const FIRE_NBR=[[0,-1,0],[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]];
+// C'è un blocco infiammabile adiacente che alimenta la fiamma?
+function hasFuel(x,y,z){ for(const d of FIRE_NBR) if(flammable(getBlock(x+d[0],y+d[1],z+d[2]))) return true; return false; }
+// C'è un blocco solido adiacente che regge la fiamma (così non resta sospesa nel vuoto)?
+function hasSupport(x,y,z){ for(const d of FIRE_NBR) if(isSolid(getBlock(x+d[0],y+d[1],z+d[2]))) return true; return false; }
+// Mette una fiamma nella cella (x,y,z) se è aria/fuoco. life=null → fiamma permanente (nessun combustibile)
 function placeFire(x,y,z){
   const here=getBlock(x,y,z);
   if(here!==AIR && here!==FIRE) return false;
-  // dev'esserci un blocco infiammabile adiacente che alimenti la fiamma
-  const nbr=[[0,-1,0],[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]];
-  let fuel=false; for(const d of nbr){ if(flammable(getBlock(x+d[0],y+d[1],z+d[2]))){ fuel=true; break; } }
-  if(!fuel) return false;
+  if(!hasSupport(x,y,z) && !hasFuel(x,y,z)) return false;   // non accende a mezz'aria sul nulla
   if(here!==FIRE){ setBlockRaw(x,y,z,FIRE); const set=new Set(); addChunks(set,x,z); rebuildSet(set); }
-  if(!hasFireAt(x,y,z)) fires.push({x,y,z,life:4+Math.random()*4,spread:1.2+Math.random()});
+  if(!hasFireAt(x,y,z)) fires.push({x,y,z, life: hasFuel(x,y,z)? (4+Math.random()*4) : null, spread:0.5+Math.random()*0.5});
   return true;
 }
-// L'acciarino: prova ad accendere il blocco mirato (se infiammabile) o la cella d'aria adiacente
+// L'acciarino: accende SEMPRE. Sul blocco infiammabile dà fuoco al blocco stesso (e si propagherà);
+// sul blocco ignifugo (pietra, ecc.) mette una fiamma sulla faccia colpita che resta lì.
 function ignite(x,y,z,face){
   const target=getBlock(x,y,z);
   if(target===FIRE) return false;
   if(flammable(target)){
-    // metti fuoco nella cella d'aria sopra, altrimenti su una faccia libera
-    if(placeFire(x,y+1,z)) return true;
-    const nbr=[[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]];
-    for(const d of nbr){ if(placeFire(x+d[0],y+d[1],z+d[2])) return true; }
+    if(placeFire(x,y+1,z)) return true;                       // fiamma sopra il legno
+    for(const d of FIRE_NBR){ if(placeFire(x+d[0],y+d[1],z+d[2])) return true; }
     return false;
   }
-  // blocco non infiammabile: prova ad accendere la cella d'aria sulla faccia colpita
-  if(face){ return placeFire(x+face[0],y+face[1],z+face[2]); }
-  return false;
+  // blocco ignifugo: accendi la cella d'aria sulla faccia colpita (resta confinata lì)
+  if(face && (face[0]||face[1]||face[2]) && placeFire(x+face[0],y+face[1],z+face[2])) return true;
+  return placeFire(x,y+1,z);
 }
 function updateFires(dt){
   if(!fires.length) return;
   const set=new Set();
   for(let i=fires.length-1;i>=0;i--){ const f=fires[i];
     if(getBlock(f.x,f.y,f.z)!==FIRE){ fires.splice(i,1); continue; }
-    f.life-=dt; f.spread-=dt;
-    if(f.spread<=0){ f.spread=1.2+Math.random();
-      // brucia un blocco infiammabile adiacente: lo trasforma in fuoco (consumandolo)
-      const nbr=[[0,-1,0],[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]];
-      for(const d of nbr){ const nx=f.x+d[0],ny=f.y+d[1],nz=f.z+d[2];
-        if(flammable(getBlock(nx,ny,nz))){
-          setBlockRaw(nx,ny,nz,FIRE); addChunks(set,nx,nz);
-          if(!hasFireAt(nx,ny,nz)) fires.push({x:nx,y:ny,z:nz,life:3+Math.random()*4,spread:1.2+Math.random()});
-          break;
+    if(hasFuel(f.x,f.y,f.z)){
+      // c'è combustibile: la fiamma si consuma e si propaga a TUTTI i vicini infiammabili (si moltiplica)
+      if(f.life==null) f.life=3+Math.random()*4;              // appena trova combustibile, inizia a bruciare
+      f.life-=dt; f.spread-=dt;
+      if(f.spread<=0){ f.spread=0.5+Math.random()*0.5;
+        for(const d of FIRE_NBR){ const nx=f.x+d[0],ny=f.y+d[1],nz=f.z+d[2];
+          if(flammable(getBlock(nx,ny,nz))){
+            setBlockRaw(nx,ny,nz,FIRE); addChunks(set,nx,nz);
+            if(!hasFireAt(nx,ny,nz)) fires.push({x:nx,y:ny,z:nz,life:3+Math.random()*4,spread:0.5+Math.random()*0.5});
+          }
         }
       }
+    } else if(!hasSupport(f.x,f.y,f.z)){
+      f.life=(f.life==null?1:f.life)-dt;                       // fiamma sospesa nel vuoto: si spegne
     }
-    if(f.life<=0){
-      // il fuoco si spegne: se sotto c'era legna/foglie resta aria (bruciato)
-      setBlockRaw(f.x,f.y,f.z,AIR); addChunks(set,f.x,f.z); fires.splice(i,1);
-    }
+    // altrimenti (nessun combustibile ma c'è un appoggio): resta accesa in quel blocco, senza propagarsi
+    if(f.life!=null && f.life<=0){ setBlockRaw(f.x,f.y,f.z,AIR); addChunks(set,f.x,f.z); fires.splice(i,1); }
   }
   if(set.size) rebuildSet(set);
 }
