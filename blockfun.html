@@ -1404,20 +1404,24 @@ function updateLights(dt){
 /* ===================== HUD ===================== */
 function renderHearts(){
   const el=document.getElementById('hearts');
-  if(mode!=='survival'){ el.innerHTML=''; return; }
-  let html=''; const full=Math.floor(player.hp/2), half=player.hp%2;
-  for(let i=0;i<player.maxhp/2;i++)
-    html += i<full?'<span class="heart">❤️</span>':(i===full&&half?'<span class="heart">💗</span>':'<span class="heart">🖤</span>');
-  el.innerHTML=html;
+  el.innerHTML='';
+  if(mode!=='survival') return;
+  const full=Math.floor(player.hp/2), half=player.hp%2;
+  for(let i=0;i<player.maxhp/2;i++){
+    const ic=drawBtnIcon(i<full?'heartFull':(i===full&&half?'heartHalf':'heartEmpty'),22);
+    ic.style.margin='0 1px'; el.appendChild(ic);
+  }
 }
 function renderClock(){
-  const s=sunVal(); let p="☀️ Giorno";
-  if(s<-0.15)p="🌙 Notte"; else if(s<0.15)p=timeOfDay<0.5?"🌅 Alba":"🌇 Tramonto";
+  const s=sunVal(); let icon='sun', label='Giorno';
+  if(s<-0.15){ icon='moon'; label='Notte'; } else if(s<0.15){ icon='sunrise'; label=timeOfDay<0.5?'Alba':'Tramonto'; }
   document.querySelector('#clock .day').textContent="Giorno "+dayCount;
-  document.getElementById('phase').textContent=p;
+  const ph=document.getElementById('phase'); ph.textContent='';
+  const ic=drawBtnIcon(icon,16); ic.style.verticalAlign='middle'; ph.appendChild(ic);
+  ph.appendChild(document.createTextNode(' '+label));
   // posizione e direzione (Nord=-Z, Sud=+Z, Est=+X, Ovest=-X)
   const fx=-Math.sin(yaw), fz=-Math.cos(yaw);
-  let dir; if(Math.abs(fx)>Math.abs(fz)) dir=fx>0?'Est ➡️':'Ovest ⬅️'; else dir=fz>0?'Sud ⬇️':'Nord ⬆️';
+  let dir; if(Math.abs(fx)>Math.abs(fz)) dir=fx>0?'Est':'Ovest'; else dir=fz>0?'Sud':'Nord';
   document.getElementById('coords').textContent='X '+Math.round(player.x)+'  Y '+Math.round(player.y)+'  Z '+Math.round(player.z)+' · '+dir;
 }
 function drawCubeIcon(id,size){
@@ -1493,6 +1497,21 @@ function drawBtnIcon(name,size){
   else if(name==='down'){ const c='#eaf6ff'; R(7,1,8,12,c); P(7,13,c);P(8,13,c);P(6,12,c);P(9,12,c);P(5,11,c);P(10,11,c);P(4,10,c);P(11,10,c); }
   else if(name==='fly'){ const c='#bfe6ff'; R(2,9,6,10,c); R(9,9,13,10,c); R(4,7,6,8,c); R(9,7,11,8,c); P(7,6,c);P(8,6,c); }
   else if(name==='inv'){ R(3,5,12,13,'#9c6b3f'); R(3,5,12,6,'#b5894e'); R(3,8,12,8,'#5a3b22'); P(7,9,'#d8c24a');P(8,9,'#d8c24a'); }
+  else if(name==='heartFull'||name==='heartHalf'||name==='heartEmpty'){
+    const red='#e23b3b', dk='#3a2230';
+    const rows=[[4,5,10,11],[3,4,5,6,9,10,11,12],[3,4,5,6,7,8,9,10,11,12],[3,4,5,6,7,8,9,10,11,12],[4,5,6,7,8,9,10,11],[5,6,7,8,9,10],[6,7,8,9],[7,8]];
+    rows.forEach((xs,ri)=>xs.forEach(x=>{ let c=red; if(name==='heartEmpty')c=dk; else if(name==='heartHalf'&&x>7)c=dk; P(x,4+ri,c); }));
+  }
+  else if(name==='sun'||name==='sunrise'){
+    const col=name==='sun'?'#ffd94a':'#ff9a3c';
+    for(let y=0;y<16;y++)for(let x=0;x<16;x++){ if(Math.hypot(x-8,y-8)<=3.2) P(x,y,col); }
+    P(8,1,col);P(8,14,col);P(1,8,col);P(14,8,col);P(3,3,col);P(13,3,col);P(3,13,col);P(13,13,col);
+  }
+  else if(name==='moon'){
+    for(let y=0;y<16;y++)for(let x=0;x<16;x++){ if(Math.hypot(x-8,y-8)<=4.2) P(x,y,'#e8eef7'); }
+    for(let y=0;y<16;y++)for(let x=0;x<16;x++){ if(Math.hypot(x-11,y-6)<=4) p.clearRect(x,y,1,1); }
+    P(4,4,'#cfe0f5');P(5,10,'#cfe0f5');
+  }
   const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); g.imageSmoothingEnabled=false; g.drawImage(o,0,0,16,16,0,0,size,size); return c;
 }
 function renderHotbar(){
