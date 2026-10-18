@@ -336,6 +336,10 @@ const hemi=new THREE.HemisphereLight(0xbfd8ff,0x4a3a2a,0.4);
 scene.add(sun); scene.add(ambient); scene.add(hemi);
 const torchLights=[]; for(let i=0;i<6;i++){ const L=new THREE.PointLight(0xffb24d,0,7,2); scene.add(L); torchLights.push(L); }
 const playerLight=new THREE.PointLight(0xffe0b0,0,11,2); scene.add(playerLight);  // bagliore del minatore
+// impronte del Bigfoot (svaniscono al mattino)
+const trackGeo=new THREE.PlaneGeometry(0.32,0.46);
+const trackMat=new THREE.MeshBasicMaterial({color:0x14100a, transparent:true, opacity:0.55, depthWrite:false});
+let tracks=[], trackSide=1;
 const fog=new THREE.Fog(0x9ec9ff, 40, 120);
 scene.fog=fog;
 
@@ -1047,6 +1051,19 @@ function spawnBigfoot(){
   spawnAnimalAt('bigfoot', x+0.5, y+1, z+0.5);
   toast('👣 ...qualcosa di grosso si muove nel buio');
 }
+function dropTrack(a,hx,hz){
+  if(tracks.length>80){ const old=tracks.shift(); scene.remove(old); }
+  trackSide=-trackSide;
+  const m=new THREE.Mesh(trackGeo, trackMat);
+  m.rotation.x=-Math.PI/2; m.rotation.z=Math.atan2(hx,hz);
+  m.position.set(a.x + (-hz)*0.18*trackSide, a.y+0.03, a.z + (hx)*0.18*trackSide);
+  scene.add(m); tracks.push(m);
+}
+function updateTracks(dt,night){
+  if(night){ trackMat.opacity=0.55; return; }
+  if(tracks.length){ trackMat.opacity=Math.max(0,trackMat.opacity-dt*0.35);   // al mattino svaniscono
+    if(trackMat.opacity<=0.02){ for(const t of tracks) scene.remove(t); tracks=[]; trackMat.opacity=0.55; } }
+}
 function updateAnimals(dt){
   const night=isNight();
   if(night){ bigfootTimer-=dt; if(bigfootTimer<=0){ bigfootTimer=18+Math.random()*22;
@@ -1077,6 +1094,7 @@ function updateAnimals(dt){
     if(onG && blocked && (hx||hz)) a.vy=JUMP*0.7;   // saltella sugli ostacoli
     if(hx||hz) a.mesh.rotation.y=Math.atan2(hx,hz);
     a.mesh.position.set(a.x,a.y,a.z);
+    if(a.type==='bigfoot' && (hx||hz)){ a._trackT=(a._trackT||0)-dt; if(a._trackT<=0){ a._trackT=0.33; dropTrack(a,hx,hz); } }  // lascia impronte
     const fl=a.hurtT>0; const hm=a.mesh.userData.headMats; if(hm) for(const mm of hm) mm.color.setHex(fl?0xff7777:0xffffff);
     if(a.type==='bigfoot' && !night){ scene.remove(a.mesh); animals.splice(i,1); continue; }  // sparisce all'alba
     if(!a.keep && (Math.hypot(a.x-player.x,a.z-player.z)>72 || a.y<player.y-90)){ scene.remove(a.mesh); animals.splice(i,1); }
@@ -1544,6 +1562,7 @@ function loop(ts){
     checkVillages(dt);
     updateMobs(dt,night);
     updateAnimals(dt);
+    updateTracks(dt,night);
     updateTNT(dt);
     updateMining(dt);
     updateFlows(dt);
@@ -1563,6 +1582,7 @@ function clearScene(){
   for(const a of animals){ scene.remove(a.mesh); } animals=[];
   for(const t of tnts){ scene.remove(t.mesh); } tnts=[];
   for(const f of fx){ scene.remove(f.mesh); } fx=[];
+  for(const t of tracks){ scene.remove(t); } tracks=[]; trackMat.opacity=0.55;
   flows=[];
 }
 function startGame(m){
