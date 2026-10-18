@@ -349,6 +349,23 @@ scene.fog=fog;
 const sunMesh=new THREE.Mesh(new THREE.PlaneGeometry(46,46), new THREE.MeshBasicMaterial({color:0xffe24a, fog:false}));
 const moonMesh=new THREE.Mesh(new THREE.PlaneGeometry(38,38), new THREE.MeshBasicMaterial({color:0xeef3fb, fog:false}));
 scene.add(sunMesh); scene.add(moonMesh);
+// nuvole a blocchi che scorrono lentamente
+const CLOUD_Y=70, CLOUD_SPAN=WX+60;
+const cloudMat=new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.85});
+const clouds=[];
+for(let i=0;i<30;i++){
+  const w=6+Math.random()*14, d=6+Math.random()*10;
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,2.2,d), cloudMat);
+  m.userData.bx=Math.random()*CLOUD_SPAN; m.position.z=Math.random()*(WZ+60)-30; m.position.y=CLOUD_Y;
+  clouds.push(m); scene.add(m);
+}
+// stelle notturne (cupola attorno al giocatore)
+const starGeo=new THREE.BufferGeometry(), spos=[];
+for(let i=0;i<260;i++){ const u=Math.random()*Math.PI*2, vy=0.12+Math.random()*0.85, r=420, rr=r*Math.sqrt(1-vy*vy);
+  spos.push(Math.cos(u)*rr, vy*r, Math.sin(u)*rr); }
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute(spos,3));
+const starMat=new THREE.PointsMaterial({color:0xffffff, size:2.4, sizeAttenuation:false, transparent:true, opacity:0, fog:false});
+const stars=new THREE.Points(starGeo, starMat); scene.add(stars);
 
 /* ===================== Atlante texture (pixel art, stile Minecraft) ===================== */
 const TS=16, COLS=16;
@@ -1393,6 +1410,12 @@ function updateSky(){
   moonMesh.position.set(player.x-ux*D, -uy*D+10, player.z-uz*D);
   sunMesh.lookAt(player.x,player.y,player.z); moonMesh.lookAt(player.x,player.y,player.z);
   sunMesh.visible=s>0; moonMesh.visible=s<0;
+  // nuvole che scorrono + stelle di notte
+  const drift=performance.now()*0.0013;
+  for(const m of clouds){ let x=((m.userData.bx+drift)%CLOUD_SPAN+CLOUD_SPAN)%CLOUD_SPAN-30; m.position.x=x; }
+  cloudMat.opacity=0.2+dayF*0.65;
+  stars.position.set(player.x,player.y,player.z);
+  starMat.opacity=Math.max(0,-s)*0.9;
   playerLight.position.set(player.x, player.y+EYE, player.z);
   playerLight.intensity = under>0.1 ? 0.35+under*0.45 : 0;    // bagliore del minatore
 }
