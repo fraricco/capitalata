@@ -1649,8 +1649,8 @@ function startGame(m){
   renderHotbar(); renderHearts(); renderClock();
   document.getElementById('hint').textContent = isTouch
     ? (m==='creative'
-        ? 'Joystick: muovi · trascina lo schermo: guarda · ⛏️ scava · 🧱 posiziona · ⤴️ su · ✈️ vola · 🎒 blocchi'
-        : 'Joystick: muovi · trascina lo schermo: guarda · ⛏️ scava/attacca · 🧱 posiziona · ⤴️ salta · 🎒 crafting · sopravvivi alla notte!')
+        ? 'Joystick: muovi · trascina: guarda · pulsanti: scava, posiziona, salta/su, vola, zaino'
+        : 'Joystick: muovi · trascina: guarda · pulsanti: scava/attacca, posiziona, salta, zaino · sopravvivi alla notte!')
     : (m==='creative'
         ? 'Frecce/WASD: muovi · trascina il mouse: guarda · Spazio su / Shift giù · F volo · clic scava · clic dx posiziona · E blocchi · 1-9 slot · ESC pausa'
         : 'Frecce/WASD: muovi · trascina il mouse: guarda · Spazio salta · clic scava/attacca · clic dx posiziona · E crafting · 1-9 slot · Sopravvivi alla notte!');
