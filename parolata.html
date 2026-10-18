@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Parolata - Il gioco di parole</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 20px 12px;
+  }
+  .app {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
+    padding: 28px 22px;
+    width: 100%;
+    max-width: 880px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    position: relative;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .back {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    color: #fff;
+    opacity: 0.75;
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+  .back:hover { opacity: 1; }
+  h1 { text-align: center; margin-bottom: 6px; font-size: 2.4rem; }
+  .subtitle { text-align: center; opacity: 0.8; margin-bottom: 22px; }
+  .author {
+    text-align: center;
+    font-size: 0.95rem;
+    padding: 10px 14px;
+    background: rgba(255, 215, 0, 0.12);
+    border: 1px solid rgba(255, 215, 0, 0.35);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .author strong { color: #ffd700; }
+  .l-badge {
+    display: inline-block;
+    background: linear-gradient(160deg, #ffe066, #ffb347);
+    color: #1e3c72;
+    font-weight: 900;
+    padding: 0 8px;
+    border-radius: 6px;
+    box-shadow: 0 2px 0 rgba(0,0,0,0.3);
+  }
+  .error {
+    background: rgba(231, 76, 60, 0.25);
+    border: 1px solid #e74c3c;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+  }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  label { display: block; margin: 14px 0 6px; font-weight: 600; }
+  .hint { font-size: 0.85rem; opacity: 0.75; margin-top: 4px; font-weight: 400; }
+  input[type="number"], input[type="text"] {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 1rem;
+  }
+  input::placeholder { color: rgba(255, 255, 255, 0.5); }
+  button {
+    background: #ffb347;
+    color: #1e3c72;
+    border: none;
+    padding: 14px 24px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 16px;
+    transition: transform 0.1s, background 0.2s;
+    width: 100%;
+    touch-action: manipulation;
+    font-family: inherit;
+  }
+  button:hover:not(:disabled) { background: #ffc46b; transform: translateY(-2px); }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  button.secondary {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+  button.secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); }
+  .player-inputs { display: grid; gap: 10px; margin-top: 12px; }
+  .choices {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .choice {
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: #fff;
+    padding: 12px 6px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    margin: 0;
+    width: 100%;
+    text-align: center;
+  }
+  .choice .desc { display: block; font-size: 0.75rem; opacity: 0.8; margin-top: 4px; font-weight: 400; }
+  .choice.selected { background: #ffb347; color: #1e3c72; border-color: #ffb347; }
+  .rules { margin-top: 22px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; padding: 12px 16px; }
+  .rules summary { cursor: pointer; font-weight: 600; }
+  .rules ul { margin: 10px 0 0 18px; line-height: 1.6; font-size: 0.95rem; }
+  .rules li { margin-bottom: 4px; }
+  .bonus-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .bonus-legend span {
+    display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 700; color: #1e3c72;
+  }
+
+  /* ---------- Passaggio del turno ---------- */
+  .handoff-box { text-align: center; padding: 30px 10px; }
+  .handoff-title { font-size: 2rem; font-weight: 700; color: #ffd700; margin-bottom: 12px; }
+  .handoff-box p { opacity: 0.9; line-height: 1.6; margin-bottom: 8px; }
+  .handoff-box button { max-width: 320px; font-size: 1.2rem; }
+
+  /* ---------- Partita ---------- */
+  .topbar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    align-items: center;
+  }
+  .stat { display: flex; flex-direction: column; min-width: 0; }
+  .stat:last-child { text-align: right; }
+  .stat-label { font-size: 0.75rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-value { font-size: 1.3rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .timer { font-variant-numeric: tabular-nums; font-size: 1.6rem; text-align: center; }
+  .timer.urgent { color: #ff7b6b; animation: blink 1s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+
+  .game-layout { display: grid; grid-template-columns: 1fr; gap: 18px; }
+  @media (min-width: 720px) {
+    .game-layout { grid-template-columns: minmax(0, 430px) 1fr; align-items: start; }
+  }
+  .board-col { width: 100%; max-width: 430px; margin: 0 auto; }
+
+  .current-word {
+    min-height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 10px;
+    margin-bottom: 12px;
+    padding: 8px 14px;
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    transition: background 0.15s;
+    text-align: center;
+  }
+  .current-word .placeholder { font-size: 0.95rem; font-weight: 400; letter-spacing: 0; opacity: 0.7; }
+  .current-word .pts { font-size: 1rem; letter-spacing: 0; opacity: 0.9; font-weight: 700; }
+  .current-word.ok { background: rgba(46, 204, 113, 0.45); }
+  .current-word.dup { background: rgba(241, 196, 15, 0.45); }
+  .current-word.bad { background: rgba(231, 76, 60, 0.45); }
+
+  .grid {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    touch-action: none;
+    -webkit-touch-callout: none;
+  }
+  .grid.small { max-width: 300px; margin: 0 auto; }
+  .tiles {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .tile {
+    position: relative;
+    border-radius: 12px;
+    background: #fdf6e3;
+    color: #1e3c72;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(1.5rem, 8vw, 2.5rem);
+    font-weight: 800;
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.28);
+    transition: transform 0.08s, background 0.15s;
+  }
+  .grid.small .tile { font-size: clamp(1.1rem, 5vw, 1.7rem); border-radius: 8px; box-shadow: 0 3px 0 rgba(0,0,0,0.28); }
+  .tile .value {
+    position: absolute; right: 6px; bottom: 3px;
+    font-size: 0.7rem; font-weight: 700; opacity: 0.65; letter-spacing: 0;
+  }
+  .tile .bonus {
+    position: absolute; left: 5px; top: 4px;
+    font-size: 0.62rem; font-weight: 800; padding: 1px 5px; border-radius: 5px;
+    background: rgba(30, 60, 114, 0.85); color: #fff; letter-spacing: 0.02em;
+  }
+  .grid.small .tile .value, .grid.small .tile .bonus { font-size: 0.55rem; }
+  .tile.bonus-DL { background: #cfe8ff; }
+  .tile.bonus-TL { background: #9ec5ff; }
+  .tile.bonus-DW { background: #ffd6a5; }
+  .tile.bonus-TW { background: #ffadad; }
+  .tile.selected { background: #ffb347; transform: scale(0.93); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.28); }
+  .tile.hint-start { outline: 4px solid #ffd700; animation: pulse 0.9s ease-in-out infinite; }
+  .tile.hint-path { outline: 4px solid #ffd700; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 4px 0 rgba(0,0,0,0.28), 0 0 0 0 rgba(255, 215, 0, 0.7); }
+    50% { box-shadow: 0 4px 0 rgba(0,0,0,0.28), 0 0 0 12px rgba(255, 215, 0, 0); }
+  }
+  .tile .step {
+    display: none;
+    position: absolute; top: -8px; right: -8px;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: #ffd700; color: #1e3c72;
+    font-size: 0.8rem; font-weight: 800;
+    align-items: center; justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    z-index: 2;
+  }
+  .tile.hint-path .step { display: flex; }
+  .overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .overlay .trace { fill: none; stroke: rgba(255, 179, 71, 0.75); stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; }
+  .overlay .hint-line { fill: none; stroke: #ffd700; stroke-width: 7; stroke-dasharray: 14 10; stroke-linecap: round; stroke-linejoin: round; }
+  .fly {
+    position: absolute; left: 50%; top: 40%;
+    transform: translate(-50%, -50%);
+    font-size: 2.2rem; font-weight: 900; color: #7fe3a4;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+    pointer-events: none;
+    animation: flyup 0.9s ease-out forwards;
+  }
+  @keyframes flyup {
+    0% { opacity: 0; transform: translate(-50%, -30%) scale(0.6); }
+    20% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+    100% { opacity: 0; transform: translate(-50%, -140%) scale(1); }
+  }
+  .timeup {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(30, 60, 114, 0.75);
+    border-radius: 12px;
+    font-size: 2rem; font-weight: 800; color: #ffd700;
+    text-align: center;
+  }
+  .timeup[hidden] { display: none; }
+
+  .hint-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 16px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+  .hint-btn {
+    flex: 0 0 auto;
+    width: 68px; height: 68px;
+    margin: 0;
+    padding: 0;
+    border-radius: 14px;
+    background: linear-gradient(160deg, #ffe066 0%, #ffb347 100%);
+    color: #1e3c72;
+    font-size: 2.6rem;
+    font-weight: 900;
+    font-family: Georgia, 'Times New Roman', serif;
+    line-height: 1;
+    box-shadow: 0 5px 0 #b8741a, 0 8px 16px rgba(0,0,0,0.35);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .hint-btn:hover:not(:disabled) { transform: translateY(-2px); background: linear-gradient(160deg, #fff0a0 0%, #ffc46b 100%); }
+  .hint-btn:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 2px 0 #b8741a, 0 4px 8px rgba(0,0,0,0.35); }
+  .hint-btn.flash { animation: glow 0.5s ease-out; }
+  @keyframes glow {
+    0% { box-shadow: 0 5px 0 #b8741a, 0 0 0 0 rgba(255, 224, 102, 0.9); }
+    100% { box-shadow: 0 5px 0 #b8741a, 0 0 0 22px rgba(255, 224, 102, 0); }
+  }
+  .hint-text { flex: 1; font-size: 0.95rem; line-height: 1.45; min-width: 0; }
+  .hint-text .pattern { font-size: 1.35rem; font-weight: 800; letter-spacing: 0.15em; display: block; margin-bottom: 2px; color: #ffd700; }
+  .hint-text .found { color: #7fe3a4; font-weight: 700; }
+  .hint-count { font-size: 0.75rem; opacity: 0.65; display: block; margin-top: 2px; }
+
+  .side-col { display: flex; flex-direction: column; min-width: 0; }
+  .found-head { font-weight: 600; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; }
+  .found-head .sub { font-size: 0.8rem; opacity: 0.65; font-weight: 400; }
+  .found-list {
+    display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start;
+    background: rgba(0, 0, 0, 0.2); border-radius: 10px; padding: 10px;
+    min-height: 90px; max-height: 320px; overflow-y: auto;
+  }
+  .found-list .empty { opacity: 0.6; font-size: 0.9rem; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    animation: pop 0.25s ease-out;
+  }
+  .chip .pts { color: #7fe3a4; font-size: 0.8rem; }
+  .chip .lmark {
+    background: linear-gradient(160deg, #ffe066, #ffb347); color: #1e3c72;
+    font-size: 0.7rem; font-weight: 900; padding: 0 5px; border-radius: 4px; font-family: Georgia, serif;
+  }
+  .chip.found { border-color: #ffd700; background: rgba(255, 215, 0, 0.18); }
+  .chip.clickable { cursor: pointer; }
+  .chip.clickable:hover, .chip.active { background: rgba(255, 179, 71, 0.4); border-color: #ffb347; }
+  .chip.active { outline: 2px solid #ffb347; }
+  @keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  #endTurnBtn { margin-top: 14px; }
+
+  /* ---------- Risultati ---------- */
+  .winner-banner { text-align: center; font-size: 1.6rem; margin-bottom: 18px; color: #ffd700; line-height: 1.4; }
+  .ranking { list-style: none; padding: 0; margin-bottom: 20px; }
+  .ranking li {
+    display: flex; justify-content: space-between;
+    padding: 14px 18px; margin-bottom: 8px;
+    background: rgba(255, 255, 255, 0.1); border-radius: 8px; font-size: 1.1rem;
+  }
+  .ranking li:first-child {
+    background: linear-gradient(90deg, rgba(255,215,0,0.3), rgba(255,179,71,0.2));
+    border: 2px solid #ffd700; font-weight: 700; font-size: 1.25rem;
+  }
+  .recap-section h3 {
+    margin: 20px 0 10px; font-size: 1.1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 6px;
+  }
+  .recap-meta { font-size: 0.85rem; opacity: 0.75; margin-bottom: 8px; }
+  .words-box {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    background: rgba(0, 0, 0, 0.2); border-radius: 10px; padding: 10px;
+  }
+  .results-layout { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 720px) { .results-layout { grid-template-columns: 300px 1fr; align-items: start; } }
+  .all-words { max-height: 340px; overflow-y: auto; }
+  .legend { font-size: 0.85rem; opacity: 0.8; margin-top: 8px; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+  @media (max-width: 480px) { .actions { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <a class="back" href="index.html">&larr; Menu</a>
+  <h1>Parolata</h1>
+  <p class="subtitle">Trova le parole nascoste nella griglia</p>
+
+  <!-- Schermata iniziale -->
+  <div id="setup" class="screen active">
+    <p class="author">
+      Un gioco tipo Ruzzle, ma con <strong>suggerimenti senza limiti</strong>: basta premere il tasto
+      <span class="l-badge">L</span>. E <strong>senza pubblicità</strong>.
+    </p>
+    <div id="dictError" class="error" hidden></div>
+
+    <label for="numPlayers">Numero di giocatori (1-4)</label>
+    <input type="number" id="numPlayers" min="1" max="4" value="1" />
+    <div id="nameInputs" class="player-inputs"></div>
+
+    <label>Tempo per ogni giocatore</label>
+    <div class="choices" id="duration">
+      <button class="choice" data-sec="60">1 min</button>
+      <button class="choice selected" data-sec="120">2 min<span class="desc">come Ruzzle</span></button>
+      <button class="choice" data-sec="180">3 min</button>
+      <button class="choice" data-sec="0">&infin;<span class="desc">senza tempo</span></button>
+    </div>
+
+    <button id="startGame">Inizia a giocare</button>
+
+    <details class="rules">
+      <summary>Come si gioca</summary>
+      <ul>
+        <li>Trascina il dito (o il mouse) sulle lettere vicine, anche in diagonale, per formare una parola italiana di almeno 2 lettere. Ogni casella si può usare una volta sola.</li>
+        <li>Ogni lettera vale dei punti (li vedi in piccolo sulla casella). Le parole lunghe prendono un bonus in più.</li>
+        <li>Le caselle colorate moltiplicano i punti:</li>
+      </ul>
+      <div class="bonus-legend">
+        <span style="background:#cfe8ff">2L = lettera &times;2</span>
+        <span style="background:#9ec5ff">3L = lettera &times;3</span>
+        <span style="background:#ffd6a5">2P = parola &times;2</span>
+        <span style="background:#ffadad">3P = parola &times;3</span>
+      </div>
+      <ul>
+        <li>Sei bloccato? Premi il tasto <span class="l-badge">L</span>: ti mostra la prima lettera di una parola che vale tanto. Premilo di nuovo e vedrai tutto il percorso con i numeri. Puoi usarlo quante volte vuoi!</li>
+        <li>Con più giocatori tutti giocano la stessa griglia, uno alla volta: vince chi fa più punti.</li>
+      </ul>
+    </details>
+  </div>
+
+  <!-- Passaggio del turno -->
+  <div id="handoff" class="screen">
+    <div class="handoff-box">
+      <div class="handoff-title" id="handoffTitle"></div>
+      <p id="handoffInfo"></p>
+      <button id="goBtn">Via!</button>
+    </div>
+  </div>
+
+  <!-- Partita -->
+  <div id="game" class="screen">
+    <div class="topbar">
+      <div class="stat"><span class="stat-label">Giocatore</span><span id="playerName" class="stat-value"></span></div>
+      <div class="stat"><span class="stat-label" style="text-align:center">Tempo</span><span id="timer" class="stat-value timer"></span></div>
+      <div class="stat"><span class="stat-label">Punti</span><span id="score" class="stat-value">0</span></div>
+    </div>
+
+    <div class="game-layout">
+      <div class="board-col">
+        <div id="currentWord" class="current-word"><span class="placeholder">Trascina sulle lettere per formare una parola</span></div>
+        <div class="grid" id="grid" oncontextmenu="return false">
+          <div class="tiles" id="tiles"></div>
+          <svg class="overlay" id="overlay" viewBox="0 0 400 400" preserveAspectRatio="none"></svg>
+          <div class="timeup" id="timeup" hidden>Tempo scaduto!</div>
+        </div>
+        <div class="hint-row">
+          <button id="hintBtn" class="hint-btn" aria-label="Suggerimento" title="Suggerimento (tasto L)">L</button>
+          <div class="hint-text" id="hintText"></div>
+        </div>
+      </div>
+
+      <div class="side-col">
+        <div class="found-head">
+          <span>Parole trovate: <span id="foundCount">0</span></span>
+          <span class="sub" id="totalWords"></span>
+        </div>
+        <div class="found-list" id="foundList"></div>
+        <button id="endTurnBtn" class="secondary">Fine turno</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Risultati -->
+  <div id="results" class="screen">
+    <div class="winner-banner" id="winnerBanner"></div>
+    <ol class="ranking" id="ranking"></ol>
+    <div id="playerRecap"></div>
+
+    <div class="recap-section">
+      <h3 id="allWordsTitle">Tutte le parole della griglia</h3>
+      <p class="recap-meta">Tocca una parola per vedere il percorso sulla griglia. Quelle con il bordo dorato sono state trovate.</p>
+      <div class="results-layout">
+        <div class="grid small" id="resultsGrid">
+          <div class="tiles" id="resultsTiles"></div>
+          <svg class="overlay" id="resultsOverlay" viewBox="0 0 400 400" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="words-box all-words" id="allWords"></div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="playAgain">Gioca ancora</button>
+      <button id="toSetup" class="secondary">Cambia impostazioni</button>
+    </div>
+  </div>
+</div>
+
+<script src="parole-it.js"></script>
+<script>
+// ======================= Dizionario =======================
+// parole-it.js contiene le parole in "front coding": una lettera maiuscola dice quante lettere
+// iniziali sono uguali alla parola precedente (A=0, B=1, ...), poi seguono le lettere restanti.
+function decodeDictionary(enc) {
+  const words = [];
+  let prev = '';
+  let i = 0;
+  const n = enc.length;
+  while (i < n) {
+    const shared = enc.charCodeAt(i) - 65;
+    i++;
+    let j = i;
+    while (j < n && enc.charCodeAt(j) >= 97) j++;
+    const w = prev.slice(0, shared) + enc.slice(i, j);
+    words.push(w);
+    prev = w;
+    i = j;
+  }
+  return words;
+}
+
+const WORDS = decodeDictionary(typeof window.PAROLE_IT === 'string' ? window.PAROLE_IT : '');
+
+// Prima posizione con parola >= p (le parole sono ordinate alfabeticamente).
+function lowerBound(p) {
+  let lo = 0, hi = WORDS.length;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (WORDS[m] < p) lo = m + 1; else hi = m;
+  }
+  return lo;
+}
+function isWord(w) { return WORDS[lowerBound(w)] === w; }
+
+// ======================= Regole =======================
+const MIN_LEN = 2;
+const MAX_LEN = 10;
+const LETTER_VALUES = { a: 1, b: 5, c: 2, d: 5, e: 1, f: 5, g: 8, h: 8, i: 1, l: 3, m: 3, n: 3, o: 1, p: 3, q: 10, r: 1, s: 1, t: 1, u: 3, v: 5, z: 8 };
+const LETTER_FREQ = { a: 11.7, b: 0.9, c: 4.5, d: 3.7, e: 11.8, f: 1.0, g: 1.6, h: 1.2, i: 10.1, l: 6.5, m: 2.5, n: 6.9, o: 9.8, p: 3.0, q: 0.25, r: 6.4, s: 5.0, t: 5.6, u: 3.0, v: 2.1, z: 1.0 };
+const VOWELS = 'aeiou';
+const BONUS = {
+  DL: { label: '2L', letter: 2, word: 1, desc: 'lettera ×2' },
+  TL: { label: '3L', letter: 3, word: 1, desc: 'lettera ×3' },
+  DW: { label: '2P', letter: 1, word: 2, desc: 'parola ×2' },
+  TW: { label: '3P', letter: 1, word: 3, desc: 'parola ×3' }
+};
+
+// Vicini (anche diagonali) di ogni casella della griglia 4x4.
+const NEIGHBORS = [];
+for (let i = 0; i < 16; i++) {
+  const r = i >> 2, c = i & 3, list = [];
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (!dr && !dc) continue;
+      const rr = r + dr, cc = c + dc;
+      if (rr >= 0 && rr < 4 && cc >= 0 && cc < 4) list.push(rr * 4 + cc);
+    }
+  }
+  NEIGHBORS.push(list);
+}
+
+const $ = (id) => document.getElementById(id);
+
+function shuffle(array) {
+  const a = [...array];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function pick(list) { return list[Math.floor(Math.random() * list.length)]; }
+
+const FREQ_LETTERS = Object.keys(LETTER_FREQ);
+const FREQ_TOTAL = FREQ_LETTERS.reduce((s, l) => s + LETTER_FREQ[l], 0);
+function randomLetter() {
+  let r = Math.random() * FREQ_TOTAL;
+  for (const l of FREQ_LETTERS) {
+    r -= LETTER_FREQ[l];
+    if (r <= 0) return l;
+  }
+  return 'e';
+}
+
+function makeLetters() {
+  for (let tries = 0; tries < 300; tries++) {
+    const letters = Array.from({ length: 16 }, randomLetter);
+    const vowels = letters.filter(l => VOWELS.includes(l)).length;
+    if (vowels < 5 || vowels > 8) continue;
+    const counts = {};
+    let ok = true;
+    for (const l of letters) {
+      counts[l] = (counts[l] || 0) + 1;
+      if (counts[l] > 3) { ok = false; break; }
+    }
+    if (ok) return letters;
+  }
+  return Array.from({ length: 16 }, randomLetter);
+}
+
+function makeBonus() {
+  const bonus = new Array(16).fill(null);
+  const cells = shuffle([...Array(16).keys()]).slice(0, 3);
+  const types = [pick(['DL', 'DL', 'TL']), pick(['DL', 'TL', 'TL']), pick(['DW', 'DW', 'TW'])];
+  cells.forEach((c, i) => { bonus[c] = types[i]; });
+  return bonus;
+}
+
+function scorePath(board, path) {
+  let sum = 0, mult = 1;
+  for (const i of path) {
+    const value = LETTER_VALUES[board.letters[i]];
+    const b = board.bonus[i] ? BONUS[board.bonus[i]] : null;
+    sum += value * (b ? b.letter : 1);
+    if (b) mult *= b.word;
+  }
+  const len = path.length;
+  const lengthBonus = len >= 5 ? Math.min(25, (len - 4) * 5) : 0;
+  return sum * mult + lengthBonus;
+}
+
+function wordOf(board, path) {
+  return path.map(i => board.letters[i]).join('');
+}
+
+// Trova tutte le parole della griglia, con il percorso che vale di più per ciascuna.
+function solveBoard(board) {
+  const best = new Map();
+  const used = new Array(16).fill(false);
+  const path = [];
+  const L = board.letters;
+  function dfs(i, prefix) {
+    const w = WORDS[lowerBound(prefix)];
+    if (w === undefined || !w.startsWith(prefix)) return;
+    used[i] = true;
+    path.push(i);
+    if (w === prefix && prefix.length >= MIN_LEN) {
+      const s = scorePath(board, path);
+      const cur = best.get(prefix);
+      if (!cur || s > cur.score) best.set(prefix, { path: path.slice(), score: s });
+    }
+    if (prefix.length < MAX_LEN) {
+      for (const j of NEIGHBORS[i]) if (!used[j]) dfs(j, prefix + L[j]);
+    }
+    used[i] = false;
+    path.pop();
+  }
+  for (let i = 0; i < 16; i++) dfs(i, L[i]);
+  return [...best.entries()]
+    .map(([word, v]) => ({ word, path: v.path, score: v.score }))
+    .sort((a, b) => b.score - a.score || b.word.length - a.word.length || a.word.localeCompare(b.word));
+}
+
+// Genera qualche griglia e tiene la più ricca di parole (con almeno una parola lunga).
+function generateBoard() {
+  let bestBoard = null, bestQuality = -1;
+  for (let k = 0; k < 24; k++) {
+    const board = { letters: makeLetters(), bonus: makeBonus() };
+    const words = solveBoard(board);
+    const longest = words.reduce((m, w) => Math.max(m, w.word.length), 0);
+    const quality = Math.min(words.length, 220) + (longest >= 7 ? 40 : longest >= 6 ? 20 : 0);
+    if (quality > bestQuality) {
+      bestQuality = quality;
+      bestBoard = board;
+      bestBoard.words = words;
+    }
+    if (words.length >= 150 && longest >= 7) break;
+  }
+  bestBoard.wordMap = new Map(bestBoard.words.map(w => [w.word, w]));
+  return bestBoard;
+}
+
+// ======================= Stato =======================
+const state = {
+  players: [],
+  durationSec: 120,
+  board: null,
+  turn: 0,
+  playing: false,
+  path: [],
+  dragging: false,
+  tileRects: [],
+  pointerId: null,
+  hint: null,          // { word, path, score, stage }  stage 1 = prima lettera, 2 = percorso completo
+  hintSkipped: new Set(),
+  timer: null,
+  endTime: 0,
+  flashTimer: null
+};
+
+function currentPlayer() { return state.players[state.turn]; }
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(id).classList.add('active');
+}
+
+// ======================= Schermata iniziale =======================
+function renderNameInputs() {
+  const n = Math.min(4, Math.max(1, parseInt($('numPlayers').value, 10) || 1));
+  const container = $('nameInputs');
+  const previous = Array.from(container.querySelectorAll('input')).map(i => i.value);
+  container.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 20;
+    input.placeholder = `Nome giocatore ${i + 1}`;
+    input.value = previous[i] !== undefined ? previous[i] : (n === 1 ? '' : `Giocatore ${i + 1}`);
+    container.appendChild(input);
+  }
+}
+$('numPlayers').addEventListener('input', renderNameInputs);
+renderNameInputs();
+
+document.querySelectorAll('#duration .choice').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#duration .choice').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    state.durationSec = parseInt(btn.dataset.sec, 10);
+  });
+});
+
+if (WORDS.length === 0) {
+  const err = $('dictError');
+  err.hidden = false;
+  err.textContent = 'Non riesco a caricare il dizionario (parole-it.js). Controlla che il file sia nella stessa cartella del gioco.';
+  $('startGame').disabled = true;
+}
+
+$('startGame').addEventListener('click', () => {
+  const n = parseInt($('numPlayers').value, 10);
+  if (isNaN(n) || n < 1 || n > 4) {
+    alert('Inserisci un numero di giocatori tra 1 e 4');
+    return;
+  }
+  const inputs = $('nameInputs').querySelectorAll('input');
+  state.players = Array.from(inputs).map((inp, i) => ({
+    name: inp.value.trim() || (n === 1 ? 'Tu' : `Giocatore ${i + 1}`),
+    score: 0,
+    found: new Map(),
+    hints: 0
+  }));
+  newRound();
+});
+
+function newRound() {
+  state.players.forEach(p => { p.score = 0; p.found = new Map(); p.hints = 0; });
+  state.board = generateBoard();
+  state.turn = 0;
+  showHandoff();
+}
+
+// ======================= Passaggio del turno =======================
+function showHandoff() {
+  const p = currentPlayer();
+  const multi = state.players.length > 1;
+  $('handoffTitle').textContent = multi ? `Tocca a ${p.name}!` : `Pronto, ${p.name}?`;
+  const time = state.durationSec > 0 ? `Hai ${formatDuration(state.durationSec)} per trovare più parole che puoi.` : 'Non c’è limite di tempo: premi "Fine turno" quando hai finito.';
+  $('handoffInfo').textContent = time + (multi ? ' Gli altri non devono guardare!' : '') + ' Premi Via! quando sei pronto.';
+  showScreen('handoff');
+}
+$('goBtn').addEventListener('click', startTurn);
+
+function formatDuration(sec) {
+  if (sec % 60 === 0) return `${sec / 60} minut${sec === 60 ? 'o' : 'i'}`;
+  return `${sec} secondi`;
+}
+function formatTime(sec) {
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+// ======================= Partita =======================
+function tileEls() { return Array.from($('tiles').children); }
+
+function renderTiles(container, board) {
+  container.innerHTML = '';
+  board.letters.forEach((l, i) => {
+    const t = document.createElement('div');
+    t.className = 'tile' + (board.bonus[i] ? ' bonus-' + board.bonus[i] : '');
+    t.dataset.i = i;
+    let html = `<span class="letter">${l.toUpperCase()}</span><span class="value">${LETTER_VALUES[l]}</span>`;
+    if (board.bonus[i]) html += `<span class="bonus" title="${BONUS[board.bonus[i]].desc}">${BONUS[board.bonus[i]].label}</span>`;
+    html += '<span class="step"></span>';
+    t.innerHTML = html;
+    container.appendChild(t);
+  });
+}
+
+function startTurn() {
+  const p = currentPlayer();
+  state.playing = true;
+  state.path = [];
+  state.dragging = false;
+  state.hint = null;
+  state.hintSkipped = new Set();
+  clearTimeout(state.flashTimer);
+
+  renderTiles($('tiles'), state.board);
+  $('overlay').innerHTML = '';
+  $('timeup').hidden = true;
+  $('playerName').textContent = p.name;
+  $('score').textContent = '0';
+  $('totalWords').textContent = `nella griglia ce ne sono ${state.board.words.length}`;
+  renderFoundList();
+  renderCurrentWord(null);
+  showScreen('game');
+  renderHint();
+
+  clearInterval(state.timer);
+  if (state.durationSec > 0) {
+    state.endTime = Date.now() + state.durationSec * 1000;
+    state.timer = setInterval(tick, 200);
+    tick();
+  } else {
+    $('timer').textContent = '∞';
+    $('timer').classList.remove('urgent');
+  }
+}
+
+function tick() {
+  const left = Math.max(0, Math.ceil((state.endTime - Date.now()) / 1000));
+  $('timer').textContent = formatTime(left);
+  $('timer').classList.toggle('urgent', left <= 10);
+  if (left <= 0) endTurn(true);
+}
+
+function endTurn(timeUp) {
+  if (!state.playing) return;
+  state.playing = false;
+  clearInterval(state.timer);
+  state.dragging = false;
+  state.path = [];
+  updateSelection();
+  $('timer').classList.remove('urgent');
+  const next = () => {
+    state.turn++;
+    if (state.turn < state.players.length) showHandoff(); else showResults();
+  };
+  if (timeUp) {
+    $('timeup').hidden = false;
+    setTimeout(next, 1400);
+  } else {
+    next();
+  }
+}
+
+$('endTurnBtn').addEventListener('click', () => {
+  if (!state.playing) return;
+  if (state.durationSec > 0 && !confirm('Vuoi davvero finire il turno adesso?')) return;
+  endTurn(false);
+});
+
+// ---------- Selezione con dito / mouse ----------
+function cacheTileRects() {
+  state.tileRects = tileEls().map(t => t.getBoundingClientRect());
+}
+function tileAt(x, y, radius) {
+  let best = -1, bestD = Infinity;
+  state.tileRects.forEach((r, i) => {
+    const d = Math.hypot((x - (r.left + r.width / 2)) / r.width, (y - (r.top + r.height / 2)) / r.height);
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return bestD <= radius ? best : -1;
+}
+
+const gridEl = $('grid');
+gridEl.addEventListener('pointerdown', (e) => {
+  if (!state.playing || state.dragging) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault();
+  cacheTileRects();
+  const i = tileAt(e.clientX, e.clientY, 0.6);
+  if (i < 0) return;
+  try { gridEl.setPointerCapture(e.pointerId); } catch (err) { /* ignora */ }
+  clearTimeout(state.flashTimer);
+  state.dragging = true;
+  state.pointerId = e.pointerId;
+  state.path = [i];
+  updateSelection();
+});
+gridEl.addEventListener('pointermove', (e) => {
+  if (!state.dragging || e.pointerId !== state.pointerId) return;
+  e.preventDefault();
+  const i = tileAt(e.clientX, e.clientY, 0.42);
+  if (i < 0) return;
+  const path = state.path;
+  const last = path[path.length - 1];
+  if (i === last) return;
+  if (path.length >= 2 && i === path[path.length - 2]) { // torna indietro
+    path.pop();
+    updateSelection();
+    return;
+  }
+  if (path.includes(i) || !NEIGHBORS[last].includes(i)) return;
+  path.push(i);
+  updateSelection();
+});
+function endDrag(e) {
+  if (!state.dragging || (e && e.pointerId !== state.pointerId)) return;
+  state.dragging = false;
+  submitWord();
+}
+gridEl.addEventListener('pointerup', endDrag);
+gridEl.addEventListener('pointercancel', endDrag);
+gridEl.addEventListener('lostpointercapture', endDrag);
+
+function updateSelection() {
+  const tiles = tileEls();
+  tiles.forEach(t => t.classList.remove('selected'));
+  state.path.forEach(i => tiles[i].classList.add('selected'));
+  drawLine($('overlay'), tiles, state.path, 'trace', state.hint && state.hint.stage === 2 ? state.hint.path : null);
+  if (state.dragging) {
+    const w = wordOf(state.board, state.path);
+    let status = null;
+    if (w.length >= MIN_LEN && isWord(w)) status = currentPlayer().found.has(w) ? 'dup' : 'ok';
+    renderCurrentWord(w, status, status === 'ok' ? scorePath(state.board, state.path) : null);
+  }
+}
+
+// Disegna la linea del trascinamento (e, se c'è, quella del suggerimento) nell'SVG sopra la griglia.
+function drawLine(svg, tiles, path, className, hintPath) {
+  const gridRect = svg.getBoundingClientRect();
+  const center = (i) => {
+    const r = tiles[i].getBoundingClientRect();
+    return [
+      ((r.left - gridRect.left + r.width / 2) / gridRect.width * 400).toFixed(1),
+      ((r.top - gridRect.top + r.height / 2) / gridRect.height * 400).toFixed(1)
+    ];
+  };
+  let html = '';
+  if (hintPath && hintPath.length > 1) {
+    html += `<polyline class="hint-line" points="${hintPath.map(i => center(i).join(',')).join(' ')}"></polyline>`;
+  }
+  if (path && path.length > 1) {
+    html += `<polyline class="${className}" points="${path.map(i => center(i).join(',')).join(' ')}"></polyline>`;
+  }
+  svg.innerHTML = html;
+}
+
+function renderCurrentWord(word, status, points) {
+  const el = $('currentWord');
+  el.className = 'current-word' + (status ? ' ' + status : '');
+  if (!word) {
+    el.innerHTML = '<span class="placeholder">Trascina sulle lettere per formare una parola</span>';
+    return;
+  }
+  let html = `<span>${word.toUpperCase()}</span>`;
+  if (status === 'ok' && points != null) html += `<span class="pts">+${points}</span>`;
+  if (status === 'dup') html += '<span class="pts">già trovata</span>';
+  if (status === 'bad') html += '<span class="pts">non vale</span>';
+  el.innerHTML = html;
+}
+
+function flashWord(word, status, points) {
+  renderCurrentWord(word, status, points);
+  clearTimeout(state.flashTimer);
+  state.flashTimer = setTimeout(() => { if (!state.dragging) renderCurrentWord(null); }, 1100);
+}
+
+function submitWord() {
+  const path = state.path;
+  const w = wordOf(state.board, path);
+  state.path = [];
+  updateSelection();
+  if (w.length < MIN_LEN) { renderCurrentWord(null); return; }
+  const p = currentPlayer();
+  if (!isWord(w)) { flashWord(w, 'bad'); return; }
+  if (p.found.has(w)) { flashWord(w, 'dup'); return; }
+
+  const points = scorePath(state.board, path);
+  const hinted = !!(state.hint && state.hint.word === w);
+  p.found.set(w, { word: w, score: points, path: path.slice(), hinted });
+  p.score += points;
+  $('score').textContent = p.score;
+  flashWord(w, 'ok', points);
+  flyPoints(points);
+  renderFoundList();
+  if (hinted) {
+    state.hint = null;
+    renderHint('found');
+  }
+}
+
+function flyPoints(points) {
+  const el = document.createElement('div');
+  el.className = 'fly';
+  el.textContent = `+${points}`;
+  gridEl.appendChild(el);
+  setTimeout(() => el.remove(), 950);
+}
+
+function renderFoundList() {
+  const p = currentPlayer();
+  const list = $('foundList');
+  $('foundCount').textContent = p.found.size;
+  list.innerHTML = '';
+  if (p.found.size === 0) {
+    list.innerHTML = '<span class="empty">Qui compariranno le parole che trovi.</span>';
+    return;
+  }
+  [...p.found.values()].reverse().forEach(entry => list.appendChild(makeChip(entry)));
+}
+
+function makeChip(entry) {
+  const chip = document.createElement('span');
+  chip.className = 'chip';
+  chip.innerHTML = `<span class="w">${entry.word.toUpperCase()}</span><span class="pts">+${entry.score}</span>` +
+    (entry.hinted ? '<span class="lmark" title="trovata con un suggerimento">L</span>' : '');
+  return chip;
+}
+
+// ---------- Suggerimenti (tasto L): senza limiti ----------
+function giveHint() {
+  if (!state.playing) return;
+  const p = currentPlayer();
+  const remaining = state.board.words.filter(e => !p.found.has(e.word));
+  const btn = $('hintBtn');
+  btn.classList.remove('flash');
+  void btn.offsetWidth;
+  btn.classList.add('flash');
+  if (remaining.length === 0) {
+    state.hint = null;
+    renderHint('all');
+    return;
+  }
+  p.hints++;
+  const h = state.hint;
+  if (h && h.stage === 1 && !p.found.has(h.word)) {
+    h.stage = 2;
+    state.hintSkipped.add(h.word);
+  } else {
+    let candidates = remaining.filter(e => !state.hintSkipped.has(e.word));
+    if (candidates.length === 0) { state.hintSkipped.clear(); candidates = remaining; }
+    const c = candidates[0];
+    state.hint = { word: c.word, path: c.path, score: c.score, stage: 1 };
+  }
+  renderHint();
+}
+
+function renderHint(special) {
+  const tiles = tileEls();
+  tiles.forEach(t => {
+    t.classList.remove('hint-start', 'hint-path');
+    t.querySelector('.step').textContent = '';
+  });
+  const h = state.hint;
+  const text = $('hintText');
+  const used = currentPlayer() ? currentPlayer().hints : 0;
+  const counter = used > 0 ? `<span class="hint-count">Suggerimenti usati: ${used} (nessun limite!)</span>` : '';
+  if (special === 'found') {
+    text.innerHTML = `<span class="found">Trovata! Bravo!</span> Premi di nuovo <b>L</b> per un altro suggerimento.${counter}`;
+  } else if (special === 'all') {
+    text.innerHTML = `<span class="found">Hai trovato tutte le parole della griglia!</span>${counter}`;
+  } else if (!h) {
+    text.innerHTML = `Premi <b>L</b> se vuoi un suggerimento: sono <b>senza limiti</b>!${counter}`;
+  } else if (h.stage === 1) {
+    tiles[h.path[0]].classList.add('hint-start');
+    const pattern = h.word[0].toUpperCase() + ' _'.repeat(h.word.length - 1);
+    text.innerHTML = `<span class="pattern">${pattern}</span>${h.word.length} lettere, ${h.score} punti: parte dalla casella che lampeggia. Premi ancora <b>L</b> per vedere tutto il percorso.${counter}`;
+  } else {
+    h.path.forEach((i, n) => {
+      tiles[i].classList.add('hint-path');
+      tiles[i].querySelector('.step').textContent = n + 1;
+    });
+    text.innerHTML = `<span class="pattern">${h.word.toUpperCase()}</span>${h.score} punti: segui i numeri! Premi <b>L</b> per un’altra parola.${counter}`;
+  }
+  drawLine($('overlay'), tiles, state.path, 'trace', h && h.stage === 2 ? h.path : null);
+}
+
+$('hintBtn').addEventListener('click', giveHint);
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'l' && e.key !== 'L') return;
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  if (!$('game').classList.contains('active')) return;
+  e.preventDefault();
+  giveHint();
+});
+
+// ======================= Risultati =======================
+function showResults() {
+  const board = state.board;
+  const players = state.players;
+  const sorted = [...players].map((p, i) => ({ ...p, idx: i })).sort((a, b) => b.score - a.score);
+  const banner = $('winnerBanner');
+  const ranking = $('ranking');
+  ranking.innerHTML = '';
+  if (players.length === 1) {
+    const p = players[0];
+    banner.textContent = `${p.name === 'Tu' ? 'Hai' : p.name + ' ha'} fatto ${p.score} punti con ${p.found.size} parol${p.found.size === 1 ? 'a' : 'e'}!`;
+  } else {
+    const top = sorted[0];
+    const tied = sorted.filter(p => p.score === top.score);
+    banner.textContent = tied.length > 1
+      ? `Pareggio (${top.score} pt) tra: ${tied.map(p => p.name).join(', ')}`
+      : `Vince ${top.name} con ${top.score} punti!`;
+    sorted.forEach((p, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span>${i + 1}. ${p.name}</span><span>${p.score} pt</span>`;
+      ranking.appendChild(li);
+    });
+  }
+
+  const recap = $('playerRecap');
+  recap.innerHTML = '';
+  players.forEach(p => {
+    const section = document.createElement('div');
+    section.className = 'recap-section';
+    const entries = [...p.found.values()].sort((a, b) => b.score - a.score || a.word.localeCompare(b.word));
+    const best = entries[0];
+    section.innerHTML = `<h3>${p.name} — ${p.score} pt</h3>` +
+      `<div class="recap-meta">${entries.length} parol${entries.length === 1 ? 'a' : 'e'} su ${board.words.length}` +
+      (best ? ` · parola migliore: ${best.word.toUpperCase()} (${best.score} pt)` : '') +
+      ` · suggerimenti usati: ${p.hints}</div>`;
+    const box = document.createElement('div');
+    box.className = 'words-box';
+    if (entries.length === 0) box.innerHTML = '<span class="empty">Nessuna parola trovata.</span>';
+    entries.forEach(e => box.appendChild(makeChip(e)));
+    section.appendChild(box);
+    recap.appendChild(section);
+  });
+
+  // Tutte le parole della griglia, con il percorso cliccabile
+  $('allWordsTitle').textContent = `Tutte le parole della griglia (${board.words.length})`;
+  renderTiles($('resultsTiles'), board);
+  $('resultsOverlay').innerHTML = '';
+  const foundBy = new Map();
+  players.forEach(p => p.found.forEach((_, w) => {
+    if (!foundBy.has(w)) foundBy.set(w, []);
+    foundBy.get(w).push(p.name);
+  }));
+  const all = $('allWords');
+  all.innerHTML = '';
+  board.words.forEach(entry => {
+    const chip = document.createElement('span');
+    const names = foundBy.get(entry.word);
+    chip.className = 'chip clickable' + (names ? ' found' : '');
+    chip.title = names ? `Trovata da ${names.join(', ')}` : 'Nessuno l’ha trovata';
+    chip.innerHTML = `<span class="w">${entry.word.toUpperCase()}</span><span class="pts">${entry.score}</span>`;
+    chip.addEventListener('click', () => showResultPath(entry, chip));
+    all.appendChild(chip);
+  });
+
+  showScreen('results');
+}
+
+function showResultPath(entry, chip) {
+  const tiles = Array.from($('resultsTiles').children);
+  tiles.forEach(t => { t.classList.remove('hint-path'); t.querySelector('.step').textContent = ''; });
+  $('allWords').querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  entry.path.forEach((i, n) => {
+    tiles[i].classList.add('hint-path');
+    tiles[i].querySelector('.step').textContent = n + 1;
+  });
+  drawLine($('resultsOverlay'), tiles, null, 'trace', entry.path);
+  if (window.innerWidth < 720) $('resultsGrid').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+$('playAgain').addEventListener('click', newRound);
+$('toSetup').addEventListener('click', () => {
+  state.board = null;
+  showScreen('setup');
+});
+
+// Piccolo aiuto per i test automatici.
+window.ParolataDebug = { state, WORDS, isWord, scorePath, solveBoard };
+</script>
+</body>
+</html>
