@@ -1065,6 +1065,9 @@ function updateFires(dt){
   const set=new Set();
   for(let i=fires.length-1;i>=0;i--){ const f=fires[i];
     if(getBlock(f.x,f.y,f.z)!==FIRE){ fires.splice(i,1); continue; }
+    // l'acqua adiacente spegne la fiamma
+    let wet=false; for(const d of FIRE_NBR){ if(getBlock(f.x+d[0],f.y+d[1],f.z+d[2])===WATER){ wet=true; break; } }
+    if(wet){ setBlockRaw(f.x,f.y,f.z,AIR); addChunks(set,f.x,f.z); fires.splice(i,1); continue; }
     if(hasFuel(f.x,f.y,f.z)){
       // c'è combustibile: la fiamma si consuma e si propaga a TUTTI i vicini infiammabili (si moltiplica)
       if(f.life==null) f.life=3+Math.random()*4;              // appena trova combustibile, inizia a bruciare
@@ -1686,6 +1689,9 @@ function fillBucket(){
 // Secchio pieno: versa il liquido
 function placeLiquid(liq){
   const v=raycastVoxel(); if(!v) return false;
+  // acqua versata direttamente sul fuoco: lo spegne
+  if(liq===WATER && v.id===FIRE){ editBlock(v.x,v.y,v.z,WATER); startFlow(v.x,v.y,v.z);
+    consumeBlock(WATER_BUCKET); addBlock(BUCKET); return true; }
   const px=v.x+v.nx, py=v.y+v.ny, pz=v.z+v.nz;
   if(getBlock(px,py,pz)!==AIR) return false;
   const wn=(getBlock(px+1,py,pz)===WATER||getBlock(px-1,py,pz)===WATER||getBlock(px,py,pz+1)===WATER||getBlock(px,py,pz-1)===WATER||getBlock(px,py+1,pz)===WATER||getBlock(px,py-1,pz)===WATER);
