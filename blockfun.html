@@ -345,6 +345,10 @@ const trackMat=new THREE.MeshBasicMaterial({color:0x14100a, transparent:true, op
 let tracks=[], trackSide=1;
 const fog=new THREE.Fog(0x9ec9ff, 40, 120);
 scene.fog=fog;
+// sole quadrato (giorno) e luna (notte) nel cielo
+const sunMesh=new THREE.Mesh(new THREE.PlaneGeometry(46,46), new THREE.MeshBasicMaterial({color:0xffe24a, fog:false}));
+const moonMesh=new THREE.Mesh(new THREE.PlaneGeometry(38,38), new THREE.MeshBasicMaterial({color:0xeef3fb, fog:false}));
+scene.add(sunMesh); scene.add(moonMesh);
 
 /* ===================== Atlante texture (pixel art, stile Minecraft) ===================== */
 const TS=16, COLS=16;
@@ -1382,6 +1386,13 @@ function updateSky(){
   hemi.intensity=(0.15+dayF*0.4)*(1-under*0.85);
   const ang=timeOfDay*Math.PI*2;
   sun.position.set(player.x+Math.cos(ang)*60, Math.sin(ang)*80, player.z+30);
+  // sole/luna nel cielo che attraversano l'arco del giorno
+  const vx=Math.cos(ang)*60, vy=Math.sin(ang)*80, vz=30, vl=Math.hypot(vx,vy,vz)||1, D=300;
+  const ux=vx/vl, uy=vy/vl, uz=vz/vl;
+  sunMesh.position.set(player.x+ux*D, uy*D+10, player.z+uz*D);
+  moonMesh.position.set(player.x-ux*D, -uy*D+10, player.z-uz*D);
+  sunMesh.lookAt(player.x,player.y,player.z); moonMesh.lookAt(player.x,player.y,player.z);
+  sunMesh.visible=s>0; moonMesh.visible=s<0;
   playerLight.position.set(player.x, player.y+EYE, player.z);
   playerLight.intensity = under>0.1 ? 0.35+under*0.45 : 0;    // bagliore del minatore
 }
