@@ -600,15 +600,16 @@ function genWorld(){
       }
     }
   }
-  // laghetto con spiaggetta al centro del mondo
+  // laghetto con spiaggetta al centro del mondo (bordi irregolari)
   const lcx=WX>>1, lcz=WZ>>1, waterY=hmap[lcx+lcz*WX];
   const lakeR=7, beachR=lakeR+3;
-  for(let dz=-beachR;dz<=beachR;dz++) for(let dx=-beachR;dx<=beachR;dx++){
-    const d=Math.hypot(dx,dz); if(d>beachR+0.5) continue;
+  for(let dz=-beachR-3;dz<=beachR+3;dz++) for(let dx=-beachR-3;dx<=beachR+3;dx++){
     const x=lcx+dx, z=lcz+dz; if(x<1||x>=WX-1||z<1||z>=WZ-1) continue;
+    const rn=(vnoise(x*0.3+5,z*0.3+5)-0.5)*5;           // perturba il bordo → meno geometrico
+    const d=Math.hypot(dx,dz)+rn; if(d>beachR+0.5) continue;
     for(let y=WY-1;y>waterY;y--) setBlockRaw(x,y,z,AIR);   // togli alberi/dossi sopra il livello dell'acqua
     if(d<=lakeR){
-      const bed=waterY-2-Math.round((1-d/lakeR)*3);        // conca: più profonda al centro
+      const bed=waterY-2-Math.round((1-Math.max(0,d)/lakeR)*3);  // conca: più profonda al centro
       for(let y=waterY;y>bed;y--) setBlockRaw(x,y,z,WATER);
       setBlockRaw(x,bed,z,SAND);
       for(let y=bed-1;y>=0;y--){ if(getBlock(x,y,z)===AIR) setBlockRaw(x,y,z,DIRT); }
@@ -619,12 +620,37 @@ function genWorld(){
     hmap[x+z*WX]=waterY;
   }
 
+  // ruscello che scende dalla montagna (angolo 3,3) fino al laghetto
+  carveStream(hmap, 8, 8, lcx, lcz, lakeR, waterY);
+
   // spawn sulla spiaggia, accanto al laghetto
   const sx=lcx, sz=lcz+lakeR+1; let sy=WY-1;
   while(sy>0 && getBlock(sx,sy,sz)===AIR) sy--;
   player.x=sx+0.5; player.y=sy+1; player.z=sz+0.5;
   player.vx=player.vy=player.vz=0; player.flying=false;
   const py=Math.floor(player.y); winMinY=py-64; winMaxY=Math.min(WY+1,py+36); lastBuildY=py;
+}
+// Ruscello serpeggiante dalla montagna al laghetto
+function carveStream(hmap, sx0, sz0, ex, ez, lakeR, lakeWaterY){
+  const startTop=hmap[sx0+sz0*WX];
+  const total=Math.hypot(ex-sx0, ez-sz0)||1, steps=Math.ceil(total*2);
+  const perpX=-(ez-sz0)/total, perpZ=(ex-sx0)/total;
+  for(let i=0;i<=steps;i++){
+    const t=i/steps;
+    const wig=Math.sin(t*Math.PI*4)*4*(1-t);                 // serpeggia di più in alto
+    const cx=Math.round(sx0+(ex-sx0)*t+perpX*wig), cz=Math.round(sz0+(ez-sz0)*t+perpZ*wig);
+    if(Math.hypot(cx-ex,cz-ez)<=lakeR) break;                // raggiunto il lago
+    const wl=Math.round(startTop+(lakeWaterY-startTop)*t);
+    for(let ddz=-1;ddz<=1;ddz++) for(let ddx=-1;ddx<=1;ddx++){
+      if(Math.abs(ddx)+Math.abs(ddz)>1) continue;            // canale a croce (~2 largo)
+      const x=cx+ddx, z=cz+ddz; if(x<1||x>=WX-1||z<1||z>=WZ-1) continue;
+      const lvl=Math.min(wl, hmap[x+z*WX]);
+      for(let y=WY-1;y>lvl;y--) if(getBlock(x,y,z)!==AIR) setBlockRaw(x,y,z,AIR);  // scava il canale
+      setBlockRaw(x,lvl,z,WATER);
+      if(lvl-1>=0 && getBlock(x,lvl-1,z)===AIR) setBlockRaw(x,lvl-1,z,DIRT);        // letto del ruscello
+      hmap[x+z*WX]=lvl;
+    }
+  }
 }
 
 /* ===================== Mesh dei chunk ===================== */
@@ -1093,6 +1119,7 @@ function updateAnimals(dt){
     if(!boxCollides(a.x,ny,a.z)) a.y=ny; else { if(a.vy<0) onG=true; a.vy=0; }
     if(onG && blocked && (hx||hz)) a.vy=JUMP*0.7;   // saltella sugli ostacoli
     if(hx||hz) a.mesh.rotation.y=Math.atan2(hx,hz);
+    if(a.type==='bigfoot') a.mesh.rotation.y=Math.atan2(player.x-a.x, player.z-a.z);  // ti fissa sempre
     a.mesh.position.set(a.x,a.y,a.z);
     if(a.type==='bigfoot' && (hx||hz)){ a._trackT=(a._trackT||0)-dt; if(a._trackT<=0){ a._trackT=0.33; dropTrack(a,hx,hz); } }  // lascia impronte
     const fl=a.hurtT>0; const hm=a.mesh.userData.headMats; if(hm) for(const mm of hm) mm.color.setHex(fl?0xff7777:0xffffff);
