@@ -353,10 +353,10 @@ scene.add(sunMesh); scene.add(moonMesh);
 const CLOUD_Y=70, CLOUD_SPAN=WX+60;
 const cloudMat=new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.85});
 const clouds=[];
-for(let i=0;i<30;i++){
-  const w=6+Math.random()*14, d=6+Math.random()*10;
-  const m=new THREE.Mesh(new THREE.BoxGeometry(w,2.2,d), cloudMat);
-  m.userData.bx=Math.random()*CLOUD_SPAN; m.position.z=Math.random()*(WZ+60)-30; m.position.y=CLOUD_Y;
+for(let i=0;i<18;i++){
+  const w=16+Math.random()*26, d=12+Math.random()*18;
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,3,d), cloudMat);
+  m.userData.bx=Math.random()*CLOUD_SPAN; m.position.z=Math.random()*(WZ+80)-40; m.position.y=CLOUD_Y;
   clouds.push(m); scene.add(m);
 }
 // stelle notturne (cupola attorno al giocatore)
@@ -1395,6 +1395,8 @@ function lerpColor(a,b,t){ const A=new THREE.Color(a),B=new THREE.Color(b); retu
 function updateSky(){
   const s=sunVal(), dayF=Math.max(0,Math.min(1,(s+1)/2));
   const sky=lerpColor(0x0a1026,0x9ec9ff,dayF);
+  const twi=Math.max(0, 1-Math.abs(s)/0.35);           // alba/tramonto: sole vicino all'orizzonte
+  if(twi>0) sky.lerp(new THREE.Color(0xff7a3c), twi*0.5);  // tinta arancio-rosa
   scene.background=sky; fog.color=sky;
   // sottoterra fa buio: le torce servono per vedere
   const under=Math.max(0, Math.min(1, (2-player.y)/18));
@@ -1410,6 +1412,7 @@ function updateSky(){
   moonMesh.position.set(player.x-ux*D, -uy*D+10, player.z-uz*D);
   sunMesh.lookAt(player.x,player.y,player.z); moonMesh.lookAt(player.x,player.y,player.z);
   sunMesh.visible=s>0; moonMesh.visible=s<0;
+  sunMesh.material.color.set(twi>0.25?'#ff8a3a':'#ffe24a');   // sole arancione all'orizzonte
   // nuvole che scorrono + stelle di notte
   const drift=performance.now()*0.0013;
   for(const m of clouds){ let x=((m.userData.bx+drift)%CLOUD_SPAN+CLOUD_SPAN)%CLOUD_SPAN-30; m.position.x=x; }
