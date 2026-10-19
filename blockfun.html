@@ -294,7 +294,7 @@ const RECIPES=[
   { name:"Mattoni",        in:{[COBBLE]:4},          out:{[BRICK]:4} },
   { name:"Mattoni di pietra",in:{[COBBLE]:4},        out:{[STONEBRICK]:4} },
   { name:"Porta",          in:{[PLANKS]:6},          out:{[DOOR]:2} },
-  { name:"TNT",            in:{[SAND]:4,[COAL]:1},   out:{[TNT]:1} },
+  { name:"TNT",            in:{[SAND]:4,[GUNPOWDER]:5}, out:{[TNT]:1} },
 ];
 // Scambi offerti dai villager (id 150 = spada di diamante)
 const TRADES=[
@@ -310,7 +310,7 @@ const STICK=100;                       // id item: gli oggetti (non blocchi) han
 const BUCKET=101, WATER_BUCKET=102, LAVA_BUCKET=103, WHEAT=104, FLINT=105;
 const APPLE=106, BREAD=107, RAW_BEEF=108, STEAK=109;          // 106-109
 const RAW_PORK=160, COOKED_PORK=161, BOW=170, ARROW=171;      // 160+ (gli attrezzi occupano 110-153)
-const FISH=172, COOKED_FISH=173, GOLDEN_APPLE=174, COOKIE=175, SHEARS=176, FISHING_ROD=177;
+const FISH=172, COOKED_FISH=173, GOLDEN_APPLE=174, COOKIE=175, SHEARS=176, FISHING_ROD=177, GUNPOWDER=178;
 const ITEMS={
   [STICK]:{ name:"Bastone", icon:"stick", color:"#9c6b3f" },
   [BUCKET]:{ name:"Secchio", icon:"bucket", color:"#b8b8c0" },
@@ -332,6 +332,7 @@ const ITEMS={
   [COOKIE]:{ name:"Biscotto", icon:"cookie", color:"#9c6b3f", food:2 },
   [SHEARS]:{ name:"Forbici", icon:"shears", color:"#d8d8d8", shears:true },
   [FISHING_ROD]:{ name:"Canna da pesca", icon:"rod", color:"#9c6b3f" },
+  [GUNPOWDER]:{ name:"Polvere da sparo", icon:"gunpowder", color:"#8a8a8a" },
 };
 // Ricette base (ovunque)
 RECIPES.push({ name:"Bastoni", in:{[PLANKS]:2}, out:{[STICK]:4} });
@@ -1414,7 +1415,10 @@ function updateMobs(dt,night){
     const fl=m.hurtT>0||prime; m.body.color.setHex(fl?(prime?0xffffff:0xff5555):0xffffff); m.face.color.setHex(fl?(prime?0xffffff:0xff5555):0xffffff);
     m.mesh.position.set(m.x, m.y+0.9, m.z);
     m.mesh.rotation.y=Math.atan2(player.x-m.x, player.z-m.z);
-    if(m.hp<=0 || d>64){ scene.remove(m.mesh); mobs.splice(i,1); }
+    if(m.hp<=0 || d>64){
+      if(m.hp<=0 && mode==='survival' && m.type==='creeper') addBlock(GUNPOWDER,1+((Math.random()*2)|0));  // il creeper ucciso lascia polvere da sparo
+      scene.remove(m.mesh); mobs.splice(i,1);
+    }
   }
 }
 
@@ -2078,6 +2082,10 @@ function drawToolIcon(id,size){
     for(let i=2;i<=12;i++) px(i,14-i,'#9c6b3f');                      // asta diagonale
     px(13,1,'#9c6b3f'); for(let i=0;i<10;i++) px(13-i,1+i,'rgba(220,220,220,0.8)'); // lenza
     px(3,12,'#dddddd'); px(4,13,'#dddddd');                           // galleggiante/amo
+  } else if(it.icon==='gunpowder'){
+    const g1='#9a9a9a', g2='#6a6a6a';                                // mucchietto di polvere grigia
+    for(let i=0;i<34;i++){ const x=4+((Math.random()*8)|0), y=7+((Math.random()*6)|0); px(x,y,Math.random()<0.5?g1:g2); }
+    rect(4,13,12,13,g2); px(7,6,g1); px(9,7,g1);                      // base + grani sparsi
   }
   g.drawImage(o,0,0,16,16,0,0,size,size);
   return c;
