@@ -814,12 +814,48 @@ function genWorld(){
   // ruscello che scende dalla montagna (angolo 3,3) fino al laghetto
   carveStream(hmap, 8, 8, lcx, lcz, lakeR, waterY);
 
+  // caverna segreta dentro la montagna più alta
+  carveMountainCave(hmap);
+
   // spawn sulla spiaggia, accanto al laghetto
   const sx=lcx, sz=lcz+lakeR+1; let sy=WY-1;
   while(sy>0 && getBlock(sx,sy,sz)===AIR) sy--;
   player.x=sx+0.5; player.y=sy+1; player.z=sz+0.5;
   player.vx=player.vy=player.vz=0; player.flying=false;
   const py=Math.floor(player.y); winMinY=py-64; winMaxY=Math.min(WY+1,py+36); lastBuildY=py;
+}
+// Scava una caverna dentro la montagna più alta, con un tunnel che arriva al fianco
+function carveMountainCave(hmap){
+  let mx=0,mz=0,mh=-1;
+  for(let z=0;z<WZ;z++)for(let x=0;x<WX;x++){ const h=hmap[x+z*WX]; if(h>mh){ mh=h; mx=x; mz=z; } }
+  const RX=5,RY=4,RZ=5;
+  const cx=Math.min(WX-RX-2,Math.max(RX+2,mx)), cz=Math.min(WZ-RZ-2,Math.max(RZ+2,mz)), cy=Math.max(7,mh-7);
+  // camera (ellissoide cavo)
+  for(let dy=-RY;dy<=RY;dy++)for(let dz=-RZ;dz<=RZ;dz++)for(let dx=-RX;dx<=RX;dx++){
+    const x=cx+dx,y=cy+dy,z=cz+dz; if(x<1||x>=WX-1||z<1||z>=WZ-1||y<2||y>=WY) continue;
+    if((dx*dx)/(RX*RX)+(dy*dy)/(RY*RY)+(dz*dz)/(RZ*RZ)<=1){ const b=getBlock(x,y,z); if(b!==AIR&&b!==WATER) setBlockRaw(x,y,z,AIR); }
+  }
+  const floorY=cy-RY+1;
+  for(let dz=-RZ;dz<=RZ;dz++)for(let dx=-RX;dx<=RX;dx++){ const x=cx+dx,z=cz+dz;
+    if(x<1||x>=WX-1||z<1||z>=WZ-1) continue;
+    if((dx*dx)/(RX*RX)+(dz*dz)/(RZ*RZ)<=1 && getBlock(x,floorY-1,z)!==AIR) setBlockRaw(x,floorY-1,z,COBBLE); }
+  // minerali e tesoro esposti sulle pareti
+  const treasure=[DIAMOND,GOLD,GOLD,IRON,IRON,COAL,DIAMOND];
+  for(let k=0;k<12;k++){ const a=Math.random()*Math.PI*2;
+    const x=Math.round(cx+Math.cos(a)*(RX-0.5)), z=Math.round(cz+Math.sin(a)*(RZ-0.5)), y=floorY+Math.floor(Math.random()*RY);
+    if(x>0&&x<WX-1&&z>0&&z<WZ-1&&isSolid(getBlock(x,y,z))) setBlockRaw(x,y,z,treasure[(Math.random()*treasure.length)|0]); }
+  // torce per illuminare la grotta
+  for(const [tx,tz] of [[-RX+1,0],[RX-1,0],[0,-RZ+1],[0,RZ-1]]){ const x=cx+tx,z=cz+tz;
+    if(getBlock(x,floorY,z)===AIR && isSolid(getBlock(x,floorY-1,z))) setBlockRaw(x,floorY,z,TORCH); }
+  // pozza di lava in un angolo basso
+  if(getBlock(cx+RX-2,floorY-1,cz-RZ+2)!==AIR) setBlockRaw(cx+RX-2,floorY-1,cz-RZ+2,LAVA);
+  // tunnel d'ingresso verso l'interno del mondo, con bocca visibile sul fianco
+  const dirX = cx<WX/2?1:-1, dirZ = cz<WZ/2?1:-1; let tx=cx, tz=cz; const ty=cy-1;
+  for(let i=0;i<30;i++){ tx+=dirX; tz+=dirZ; if(tx<1||tx>=WX-1||tz<1||tz>=WZ-1) break;
+    for(let yy=ty;yy<=ty+1;yy++){ if(getBlock(tx,yy,tz)!==AIR) setBlockRaw(tx,yy,tz,AIR); }
+    if(getBlock(tx,ty-1,tz)===AIR) setBlockRaw(tx,ty-1,tz,COBBLE);
+    if(hmap[tx+tz*WX]<=ty+1) break;   // sbucati sul fianco → bocca della caverna
+  }
 }
 // Ruscello serpeggiante dalla montagna al laghetto
 function carveStream(hmap, sx0, sz0, ex, ez, lakeR, lakeWaterY){
@@ -1242,6 +1278,14 @@ const MOB_BODY=pixTex(g=>noiseFillN(g,0x4a9a4a,14));
 const MOB_FACE=pixTex(g=>{ noiseFillN(g,0x5aa05a,12); g.fillStyle='#0b0b0b'; g.fillRect(4,6,2,2); g.fillRect(10,6,2,2); g.fillStyle='#2c3e2c'; g.fillRect(6,11,4,1); });
 
 const mobGeo=new THREE.BoxGeometry(0.6,1.8,0.6);
+// tipi di mostri (tutti ostili, di notte)
+const MOB_DEF={
+  zombie:  { body:0x4a9a4a, face:0x5aa05a, hp:14, speed:2.0, dmg:3, behavior:'melee' },
+  skeleton:{ body:0xdedede, face:0xe9e9e9, hp:12, speed:1.9, dmg:0, behavior:'ranged' },
+  creeper: { body:0x4fae4f, face:0x2f7d2f, hp:12, speed:2.1, dmg:0, behavior:'boom' },
+  spider:  { body:0x3a2a2a, face:0x5a1f1f, hp:10, speed:2.6, dmg:2, behavior:'melee' },
+};
+const MOB_SPAWN=['zombie','zombie','skeleton','creeper','spider'];
 function spawnMob(){
   if(mobs.length>=8) return;
   const ang=Math.random()*Math.PI*2, dist=10+Math.random()*8;
@@ -1249,10 +1293,35 @@ function spawnMob(){
   if(mx<1||mx>=WX-1||mz<1||mz>=WZ-1) return;
   let my=WY-1; while(my>0 && getBlock(mx,my,mz)===AIR) my--;
   my+=1; if(getBlock(mx,my,mz)!==AIR) return;
-  const body=new THREE.MeshLambertMaterial({map:MOB_BODY}), face=new THREE.MeshLambertMaterial({map:MOB_FACE});
+  const type=MOB_SPAWN[(Math.random()*MOB_SPAWN.length)|0], def=MOB_DEF[type];
+  if(!def._body){ def._body=bodyTexNum(def.body); def._face=faceTexNum(def.face); }
+  const body=new THREE.MeshLambertMaterial({map:def._body}), face=new THREE.MeshLambertMaterial({map:def._face});
   const mesh=new THREE.Mesh(mobGeo,[body,body,body,body,face,body]); scene.add(mesh);  // faccia su +Z
-  const mob={ kind:'mob', x:mx+0.5,y:my,z:mz+0.5, vy:0, hp:14, hurtT:0, dmgCD:0, burn:0, mesh, body, face };
+  const mob={ kind:'mob', type, def, x:mx+0.5,y:my,z:mz+0.5, vy:0, hp:def.hp, hurtT:0, dmgCD:0, burn:0,
+              shootCD:1+Math.random()*2, fuse:0, mesh, body, face };
   mesh.userData.creature=mob; mobs.push(mob);
+}
+// Freccia scoccata da uno scheletro: colpisce il giocatore
+function mobShootArrow(m){
+  const dx=player.x-m.x, dy=(player.y+1.0)-(m.y+1.2), dz=player.z-m.z, d=Math.hypot(dx,dy,dz)||1, sp=20;
+  const mesh=new THREE.Mesh(arrowGeo,arrowMat); scene.add(mesh);
+  const a={ x:m.x, y:m.y+1.2, z:m.z, vx:dx/d*sp, vy:dy/d*sp, vz:dz/d*sp, life:3, foe:true, mesh };
+  mesh.position.set(a.x,a.y,a.z); mesh.lookAt(a.x+a.vx,a.y+a.vy,a.z+a.vz); arrows.push(a);
+}
+// Esplosione del creeper
+function creeperBoom(m){
+  const cx=Math.floor(m.x),cy=Math.floor(m.y),cz=Math.floor(m.z), R=3; const set=new Set();
+  for(let dx=-R;dx<=R;dx++)for(let dy=-R;dy<=R;dy++)for(let dz=-R;dz<=R;dz++){
+    if(dx*dx+dy*dy+dz*dz>R*R+1) continue;
+    const x=cx+dx,y=cy+dy,z=cz+dz,id=getBlock(x,y,z);
+    if(id===AIR||id===BEDROCK||id===TNT) continue;
+    setBlockRaw(x,y,z,AIR); addChunks(set,x,z);
+  }
+  rebuildSet(set); spawnBoom(cx+0.5,cy+0.5,cz+0.5,R);
+  if(mode==='survival'){ const d=Math.hypot(player.x-(cx+0.5),(player.y+0.9)-(cy+0.5),player.z-(cz+0.5));
+    if(d<=R+1.6){ const dmg=Math.round(13*Math.max(0,(R+1.6-d)/(R+1.6)));
+      const ddx=player.x-(cx+0.5),ddz=player.z-(cz+0.5),dd=Math.hypot(ddx,ddz)||1;
+      player.vx+=ddx/dd*8; player.vz+=ddz/dd*8; player.vy=8; if(dmg>0){ player.hurtT=0; hurtPlayer(dmg); } } }
 }
 function mobCollides(x,y,z){
   const r=0.3;
@@ -1273,35 +1342,45 @@ function creatureHazard(c){
 function updateMobs(dt,night){
   if(mode==='survival'&&night){ mobTimer-=dt; if(mobTimer<=0){ spawnMob(); mobTimer=2.5+Math.random()*3; } }
   for(let i=mobs.length-1;i>=0;i--){
-    const m=mobs[i];
+    const m=mobs[i], def=m.def||MOB_DEF.zombie;
     const dx=player.x-m.x, dz=player.z-m.z, d=Math.hypot(dx,dz)||1;
-    const sp=2.0/d;
+    // direzione: lo scheletro tiene la distanza (arretra se troppo vicino, si ferma a media distanza per sparare)
+    let mdir=1;
+    if(def.behavior==='ranged'){ if(d<5) mdir=-1; else if(d<12) mdir=0; }
+    const sp=def.speed/d*mdir;
     let nx=m.x+dx*sp*dt, nz=m.z+dz*sp*dt;
     let onGround=false;
-    if(!mobCollides(nx,m.y,m.z)) m.x=nx; else { if(mobCollides(nx,m.y+1,m.z)===false && m.vy<=0){ /*prova salto*/ } }
+    if(!mobCollides(nx,m.y,m.z)) m.x=nx;
     if(!mobCollides(m.x,m.y,nz)) m.z=nz;
-    // gravità / salto
     m.vy-=GRAV*dt; if(m.vy<-TERM)m.vy=-TERM;
     const ny=m.y+m.vy*dt;
     if(!mobCollides(m.x,ny,m.z)) m.y=ny; else { if(m.vy<0) onGround=true; m.vy=0; }
-    // salta se bloccato orizzontalmente
-    if(onGround && (mobCollides(m.x+Math.sign(dx)*0.35,m.y,m.z)||mobCollides(m.x,m.y,m.z+Math.sign(dz)*0.35))) m.vy=JUMP*0.85;
+    if(onGround && mdir>0 && (mobCollides(m.x+Math.sign(dx)*0.35,m.y,m.z)||mobCollides(m.x,m.y,m.z+Math.sign(dz)*0.35))) m.vy=JUMP*0.85;
 
     if(m.hurtT>0) m.hurtT-=dt;
     if(m.dmgCD>0) m.dmgCD-=dt;
-    // contatto col giocatore
-    if(Math.abs(player.x-m.x)<0.7 && Math.abs(player.z-m.z)<0.7 && Math.abs((player.y+0.9)-(m.y+0.9))<1.4){
-      if(m.dmgCD<=0){ hurtPlayer(2); m.dmgCD=0.9; player.vy=4; player.vx+=dx/d*-3; player.vz+=dz/d*-3; }
+    const touching = Math.abs(player.x-m.x)<0.7 && Math.abs(player.z-m.z)<0.7 && Math.abs((player.y+0.9)-(m.y+0.9))<1.4;
+    // comportamenti
+    if(def.behavior==='melee' && touching && m.dmgCD<=0){
+      hurtPlayer(def.dmg); m.dmgCD=0.9; player.vy=4; player.vx+=dx/d*-3; player.vz+=dz/d*-3;
+    }
+    if(def.behavior==='ranged'){ m.shootCD-=dt;
+      if(d<16 && m.shootCD<=0){ mobShootArrow(m); m.shootCD=1.6+Math.random()*1.2; }
+    }
+    if(def.behavior==='boom'){
+      if(d<2.6){ m.fuse+=dt*1.6; if(m.fuse>=1.2){ creeperBoom(m); scene.remove(m.mesh); mobs.splice(i,1); continue; } }
+      else m.fuse=Math.max(0,m.fuse-dt);
     }
     // bruciano di giorno
     if(!night){ m.burn+=dt; if(m.burn>1.0){ m.hp-=2; m.burn=0; } } else m.burn=0;
     // lava/fuoco: fanno male (la lava uccide in fretta)
     const hazM=creatureHazard(m);
     if(hazM){ m.hazT=(m.hazT||0)-dt; if(m.hazT<=0){ m.hazT=0.4; m.hp-=(hazM===LAVA?8:3); m.hurtT=0.2; } }
-    const fl=m.hurtT>0; m.body.color.setHex(fl?0xff5555:0xffffff); m.face.color.setHex(fl?0xff5555:0xffffff);
+    const prime=m.fuse>0 && Math.sin(m.fuse*22)>0;                         // il creeper lampeggia prima di esplodere
+    const fl=m.hurtT>0||prime; m.body.color.setHex(fl?(prime?0xffffff:0xff5555):0xffffff); m.face.color.setHex(fl?(prime?0xffffff:0xff5555):0xffffff);
     m.mesh.position.set(m.x, m.y+0.9, m.z);
-    m.mesh.rotation.y=Math.atan2(player.x-m.x, player.z-m.z);   // faccia verso il giocatore
-    if(m.hp<=0 || d>60){ scene.remove(m.mesh); m.mesh.geometry.dispose?0:0; mobs.splice(i,1); }
+    m.mesh.rotation.y=Math.atan2(player.x-m.x, player.z-m.z);
+    if(m.hp<=0 || d>64){ scene.remove(m.mesh); mobs.splice(i,1); }
   }
 }
 
@@ -1415,6 +1494,14 @@ function updateAnimals(dt){
     }
     else { a.wander-=dt; if(a.wander<=0){ a.moving=Math.random()<0.7; a.heading=Math.random()*Math.PI*2; a.wander=2+Math.random()*4; }
       if(a.moving){ hx=Math.sin(a.heading); hz=Math.cos(a.heading); sp=def.speed; } }
+    // evita lava e fuoco: non ci cammina dentro (ma se gliela piazzi addosso muore lo stesso)
+    if(sp>0){
+      const axh=Math.floor(a.x+hx*0.7), azh=Math.floor(a.z+hz*0.7), ayh=Math.floor(a.y);
+      const ahead=getBlock(axh,ayh,azh), aheadLow=getBlock(axh,ayh-1,azh);
+      if(ahead===LAVA||ahead===FIRE||aheadLow===LAVA||aheadLow===FIRE){
+        hx=0; hz=0; sp=0; a.moving=false; a.flee=0; a.heading=Math.random()*Math.PI*2; a.wander=0.4+Math.random();
+      }
+    }
     let blocked=false;
     const nx=a.x+hx*sp*dt, nz=a.z+hz*sp*dt;
     if(!boxCollides(nx,a.y,a.z)) a.x=nx; else blocked=true;
@@ -1513,9 +1600,14 @@ function updateArrows(dt){
     a.vy-=14*dt;                                   // gravità lieve
     a.x+=a.vx*dt; a.y+=a.vy*dt; a.z+=a.vz*dt;
     let dead=a.life<=0;
-    // colpo contro una creatura
-    if(!dead){ for(const c of mobs.concat(animals)){
-      if(Math.abs(c.x-a.x)<0.6 && Math.abs(c.z-a.z)<0.6 && a.y>c.y && a.y<c.y+1.9){ hitCreature(c,6); dead=true; break; } } }
+    if(a.foe){
+      // freccia di uno scheletro: colpisce il giocatore
+      if(!dead && Math.abs(player.x-a.x)<0.5 && Math.abs(player.z-a.z)<0.5 && a.y>player.y && a.y<player.y+PH){ player.hurtT=0; hurtPlayer(3); dead=true; }
+    } else {
+      // freccia del giocatore: colpisce una creatura
+      if(!dead){ for(const c of mobs.concat(animals)){
+        if(Math.abs(c.x-a.x)<0.6 && Math.abs(c.z-a.z)<0.6 && a.y>c.y && a.y<c.y+1.9){ hitCreature(c,6); dead=true; break; } } }
+    }
     // colpo contro un blocco solido
     if(!dead && isSolid(getBlock(Math.floor(a.x),Math.floor(a.y),Math.floor(a.z)))) dead=true;
     if(dead){ scene.remove(a.mesh); arrows.splice(i,1); }
@@ -1575,6 +1667,13 @@ let mineKey=null, mineProg=0;
 function resetMining(){ mineKey=null; mineProg=0; breakBox.visible=false; }
 function breakBlock(vox,tool){
   editBlock(vox.x,vox.y,vox.z,AIR);
+  // blocchi a due celle: rompendone una si rompe anche l'altra metà
+  if(vox.id===DOOR||vox.id===DOOR_OPEN){
+    for(const oy of [1,-1]){ const b=getBlock(vox.x,vox.y+oy,vox.z); if(b===DOOR||b===DOOR_OPEN){ editBlock(vox.x,vox.y+oy,vox.z,AIR); break; } }
+  }
+  if(vox.id===BED){
+    for(const d of [[1,0],[-1,0],[0,1],[0,-1]]){ if(getBlock(vox.x+d[0],vox.y,vox.z+d[1])===BED){ editBlock(vox.x+d[0],vox.y,vox.z+d[1],AIR); break; } }
+  }
   if(mode==='survival'){
     const hasPick=tool&&tool.cat==='pick';
     if(vox.id===OBSIDIAN){ if(hasPick && tool.tier>=4) addBlock(OBSIDIAN); }   // ossidiana: serve piccone di diamante
@@ -1656,8 +1755,7 @@ function doRight(){
   const vox=raycastVoxel();
   // blocchi interattivi: hanno la precedenza quando li miri
   if(vox){
-    if(vox.id===DOOR){ editBlock(vox.x,vox.y,vox.z,DOOR_OPEN); return; }
-    if(vox.id===DOOR_OPEN){ editBlock(vox.x,vox.y,vox.z,DOOR); return; }
+    if(vox.id===DOOR||vox.id===DOOR_OPEN){ toggleDoor(vox.x,vox.y,vox.z); return; }
     if(vox.id===GATE){ editBlock(vox.x,vox.y,vox.z,GATE_OPEN); return; }
     if(vox.id===GATE_OPEN){ editBlock(vox.x,vox.y,vox.z,GATE); return; }
     if(vox.id===TRAPDOOR){ editBlock(vox.x,vox.y,vox.z,TRAPDOOR_OPEN); return; }
@@ -1686,13 +1784,36 @@ function doRight(){
   if(getBlock(px,py,pz)!==AIR) return;
   const id=sel;
   if(id==null||!hasBlock(id)||!BLOCKS[id]) return;   // attrezzi/secchi/grano non si posizionano come blocchi
-  // non costruire dentro il giocatore
-  if(isSolid(id)){
-    if(px>=Math.floor(player.x-PW)&&px<=Math.floor(player.x+PW)&&
-       pz>=Math.floor(player.z-PW)&&pz<=Math.floor(player.z+PW)&&
-       py>=Math.floor(player.y)&&py<=Math.floor(player.y+PH-0.001)) return;
+  // porta: occupa due blocchi in altezza
+  if(id===DOOR){
+    if(getBlock(px,py+1,pz)!==AIR){ toast('Serve spazio in altezza'); return; }
+    if(insidePlayer(px,py,pz)||insidePlayer(px,py+1,pz)) return;
+    editBlock(px,py,pz,DOOR); editBlock(px,py+1,pz,DOOR); consumeBlock(DOOR); return;
   }
+  // letto: occupa due blocchi (nella direzione dello sguardo)
+  if(id===BED){
+    let dX=0,dZ=0; const fx2=-Math.sin(yaw), fz2=-Math.cos(yaw);
+    if(Math.abs(fx2)>Math.abs(fz2)) dX=fx2>0?1:-1; else dZ=fz2>0?1:-1;
+    const bx=px+dX, bz=pz+dZ;
+    if(getBlock(bx,py,bz)!==AIR){ toast('Serve spazio per il letto'); return; }
+    if(!isSolid(getBlock(px,py-1,pz))||!isSolid(getBlock(bx,py-1,bz))){ toast('Serve un appoggio per il letto'); return; }
+    if(insidePlayer(px,py,pz)||insidePlayer(bx,py,bz)) return;
+    editBlock(px,py,pz,BED); editBlock(bx,py,bz,BED); consumeBlock(BED); return;
+  }
+  // non costruire dentro il giocatore
+  if(isSolid(id) && insidePlayer(px,py,pz)) return;
   editBlock(px,py,pz,id); consumeBlock(id); dropPlaced(px,py,pz);
+}
+function insidePlayer(x,y,z){
+  return x>=Math.floor(player.x-PW)&&x<=Math.floor(player.x+PW)&&
+         z>=Math.floor(player.z-PW)&&z<=Math.floor(player.z+PW)&&
+         y>=Math.floor(player.y)&&y<=Math.floor(player.y+PH-0.001);
+}
+// Porta/cancello a due celle: apre o chiude entrambe le metà
+function toggleDoor(x,y,z){
+  const to = getBlock(x,y,z)===DOOR ? DOOR_OPEN : DOOR;
+  editBlock(x,y,z,to);
+  for(const oy of [1,-1]){ const b=getBlock(x,y+oy,z); if(b===DOOR||b===DOOR_OPEN) editBlock(x,y+oy,z,to); }
 }
 // Secchio: riempi guardando un liquido
 function fillBucket(){
