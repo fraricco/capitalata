@@ -1262,6 +1262,14 @@ function mobCollides(x,y,z){
         if(isSolid(getBlock(xx,yy,zz))) return true;
   return false;
 }
+// Lava/fuoco in cui si trova una creatura (ai piedi o al corpo)
+function creatureHazard(c){
+  const x=Math.floor(c.x), z=Math.floor(c.z);
+  const b0=getBlock(x,Math.floor(c.y),z), b1=getBlock(x,Math.floor(c.y+0.9),z);
+  if(b0===LAVA||b1===LAVA) return LAVA;
+  if(b0===FIRE||b1===FIRE) return FIRE;
+  return 0;
+}
 function updateMobs(dt,night){
   if(mode==='survival'&&night){ mobTimer-=dt; if(mobTimer<=0){ spawnMob(); mobTimer=2.5+Math.random()*3; } }
   for(let i=mobs.length-1;i>=0;i--){
@@ -1287,6 +1295,9 @@ function updateMobs(dt,night){
     }
     // bruciano di giorno
     if(!night){ m.burn+=dt; if(m.burn>1.0){ m.hp-=2; m.burn=0; } } else m.burn=0;
+    // lava/fuoco: fanno male (la lava uccide in fretta)
+    const hazM=creatureHazard(m);
+    if(hazM){ m.hazT=(m.hazT||0)-dt; if(m.hazT<=0){ m.hazT=0.4; m.hp-=(hazM===LAVA?8:3); m.hurtT=0.2; } }
     const fl=m.hurtT>0; m.body.color.setHex(fl?0xff5555:0xffffff); m.face.color.setHex(fl?0xff5555:0xffffff);
     m.mesh.position.set(m.x, m.y+0.9, m.z);
     m.mesh.rotation.y=Math.atan2(player.x-m.x, player.z-m.z);   // faccia verso il giocatore
@@ -1416,6 +1427,10 @@ function updateAnimals(dt){
     if(a.type==='bigfoot') a.mesh.rotation.y=Math.atan2(player.x-a.x, player.z-a.z);  // ti fissa sempre
     a.mesh.position.set(a.x,a.y,a.z);
     if(a.type==='bigfoot' && (hx||hz)){ a._trackT=(a._trackT||0)-dt; if(a._trackT<=0){ a._trackT=0.33; dropTrack(a,hx,hz); } }  // lascia impronte
+    // lava/fuoco: anche gli animali muoiono (in qualsiasi modalità)
+    const hazA=creatureHazard(a);
+    if(hazA){ a.hazT=(a.hazT||0)-dt; if(a.hazT<=0){ a.hazT=0.4; a.hp-=(hazA===LAVA?8:3); a.hurtT=0.2;
+      if(a.hp<=0){ scene.remove(a.mesh); animals.splice(i,1); continue; } } }
     const fl=a.hurtT>0; const hm=a.mesh.userData.headMats; if(hm) for(const mm of hm) mm.color.setHex(fl?0xff7777:0xffffff);
     if(a.type==='bigfoot' && !night){ scene.remove(a.mesh); animals.splice(i,1); continue; }  // sparisce all'alba
     if(!a.keep && (Math.hypot(a.x-player.x,a.z-player.z)>72 || a.y<player.y-90)){ scene.remove(a.mesh); animals.splice(i,1); }
