@@ -223,7 +223,7 @@ function startLevel(lv) {
   world = buildLevel(lv);
   const hp = world.hospital.pad;
   heli = { x: hp.x, y: hp.y, vx: 0, vy: 0, a: 0, z: 0, state: 'landed', rot: 0, hull: 100, inv: 0, flash: 0 };
-  const tl = 60; // il paziente resiste un minuto
+  const tl = 50; // 50 secondi per arrivare, 50 per tornare
   game = { phase: 'toPatient', time: tl, timeMax: tl, t: 0, anim: 0, strikes: 0, score: 0, hits: 0 };
   cam.x = heli.x; cam.y = heli.y;
   mode = 'play';
@@ -325,8 +325,8 @@ function update(dt) {
   if (shake > 0) shake -= dt;
   if (mode !== 'play') { heli && (heli.rot += dt * 10); return; }
   game.t += dt;
-  game.time -= dt;
-  if (game.time <= 0) { game.time = 0; return endGame(false, 'Il paziente non ce l\'ha fatta: tempo scaduto ⏱️'); }
+  if (game.phase === 'toPatient' || game.phase === 'return') game.time -= dt; // il tempo si ferma durante carico/scarico
+  if (game.time <= 0) { game.time = 0; return endGame(false, game.phase === 'toPatient' ? 'Non sei arrivato in tempo sul luogo dell\'incidente ⏱️' : 'Il paziente non ce l\'ha fatta: tempo scaduto ⏱️'); }
   if (heli.inv > 0) heli.inv -= dt;
 
   // controllo elicottero
@@ -361,7 +361,7 @@ function update(dt) {
   if (game.phase === 'loading' || game.phase === 'unloading') {
     game.anim += dt / 3.8;
     if (game.anim >= 1) {
-      if (game.phase === 'loading') { game.phase = 'return'; game.anim = 0; toast('Paziente a bordo! Riportalo in ospedale 🏥', 4); }
+      if (game.phase === 'loading') { game.phase = 'return'; game.anim = 0; game.time = game.timeMax = 50; toast('Paziente a bordo! 50 secondi per l\'ospedale 🏥', 4); }
       else { endGame(true); }
     }
   }
@@ -634,7 +634,7 @@ function drawHUD() {
   ctx.fillText(`🚑 Livello ${level}   ⭐ ${totalScore}`, pad + 12, pad + 22);
   bar(pad + 12, pad + 34, 216, 12, heli.hull / 100, heli.hull > 50 ? '#4cd964' : heli.hull > 25 ? '#ffcc00' : '#ff3b30', '🔧 Elicottero');
   const pf = game.time / game.timeMax;
-  bar(pad + 12, pad + 70, 216, 12, pf, pf > 0.5 ? '#4aa8ff' : pf > 0.25 ? '#ffcc00' : '#ff3b30', '❤️ Paziente · ' + Math.ceil(game.time) + 's');
+  bar(pad + 12, pad + 70, 216, 12, pf, pf > 0.5 ? '#4aa8ff' : pf > 0.25 ? '#ffcc00' : '#ff3b30', (game.phase === 'toPatient' ? '⏱️ Arrivo all\'incidente · ' : game.phase === 'loading' ? '🧑‍⚕️ Caricamento · ' : '❤️ Paziente · ') + Math.ceil(game.time) + 's');
   ctx.fillStyle = '#fff'; ctx.font = '12px sans-serif';
   ctx.fillText(`👥 Pedoni spaventati: ${game.strikes}/3`, pad + 12, pad + 104);
 
