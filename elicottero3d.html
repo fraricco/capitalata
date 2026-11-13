@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Eli-Soccorso 3D</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #9cc7ee; font-family: 'Segoe UI', Tahoma, sans-serif; color: #fff; }
+  #gl, #hud { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; }
+  #hud { pointer-events: none; z-index: 2; }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10,20,35,0.7); padding: 16px; z-index: 10; }
+  #overlay.hidden { display: none; }
+  .panel { background: rgba(20,35,60,0.82); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.25); border-radius: 16px; padding: 26px 28px; max-width: 580px; width: 100%; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.4); max-height: 100%; overflow: auto; }
+  .panel h1 { font-size: 2.2rem; margin-bottom: 6px; }
+  .panel h2 { font-size: 1.7rem; margin-bottom: 10px; }
+  .panel p { opacity: 0.92; line-height: 1.5; margin-bottom: 12px; }
+  .modes { display: flex; gap: 10px; margin: 14px 0; }
+  .mode { flex: 1; border-radius: 10px; padding: 10px 6px; border: 2px solid rgba(255,255,255,0.2); font-size: 0.85rem; }
+  .mode .e { font-size: 2rem; display: block; }
+  .mode.on { border-color: #ffb347; background: rgba(255,179,71,0.18); }
+  .mode.off { opacity: 0.45; }
+  .keys { text-align: left; font-size: 0.92rem; background: rgba(0,0,0,0.28); border-radius: 10px; padding: 10px 14px; margin: 10px 0 16px; line-height: 1.75; }
+  kbd { background: rgba(255,255,255,0.2); border-radius: 4px; padding: 1px 6px; font-family: inherit; font-size: 0.85em; }
+  button.big { background: #ffb347; color: #1e3c72; font-weight: 700; font-size: 1.1rem; border: none; border-radius: 10px; padding: 12px 30px; cursor: pointer; margin: 4px; }
+  button.big:hover { filter: brightness(1.08); }
+  a.back { color: #fff; opacity: 0.7; display: inline-block; margin-top: 8px; font-size: 0.9rem; }
+  table.sc { margin: 8px auto 14px; text-align: left; border-collapse: collapse; }
+  table.sc td { padding: 3px 12px; } table.sc td:last-child { text-align: right; font-weight: 700; color: #ffd166; }
+  #touch { position: fixed; inset: 0; pointer-events: none; z-index: 5; display: none; }
+  body.touch #touch { display: block; }
+  .tb { position: absolute; pointer-events: auto; width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,0.22); border: 2px solid rgba(255,255,255,0.5); color: #fff; font-size: 1.5rem; display: flex; align-items: center; justify-content: center; user-select: none; touch-action: none; }
+  .tb.p { background: rgba(255,179,71,0.6); }
+  #bL { left: 12px; bottom: 28px; } #bR { left: 88px; bottom: 28px; }
+  #bC { left: 12px; bottom: 104px; font-size: 0.8rem; } #bF { left: 88px; bottom: 104px; font-size: 0.8rem; }
+  #bU { right: 88px; bottom: 28px; } #bD { right: 12px; bottom: 28px; }
+  #bA { right: 12px; bottom: 104px; width: 84px; height: 84px; font-size: 0.8rem; font-weight: 700; background: rgba(46,160,67,0.55); }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="hud"></canvas>
+<div id="touch">
+  <div class="tb" id="bL" data-k="left">◀</div><div class="tb" id="bR" data-k="right">▶</div>
+  <div class="tb" id="bC" data-k="climb">SALI</div><div class="tb" id="bF" data-k="descend">SCENDI</div>
+  <div class="tb" id="bU" data-k="up">▲</div><div class="tb" id="bD" data-k="down">▼</div>
+  <div class="tb" id="bA" data-k="act">ATTERRA<br>/ DECOLLA</div>
+</div>
+<div id="overlay"><div class="panel" id="panel"></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+const glc = document.getElementById('gl'), hudc = document.getElementById('hud');
+const ctx = hudc.getContext('2d');
+const overlay = document.getElementById('overlay'), panel = document.getElementById('panel');
+if (typeof THREE === 'undefined') {
+  panel.innerHTML = '<h2>Errore</h2><p>Impossibile caricare la libreria 3D (Three.js). Controlla la connessione e ricarica la pagina.</p>';
+  return;
+}
+
+// ---------- costanti ----------
+const N = 7, CELL = 600, ROAD = 130, BLK = 470, W = N * CELL + ROAD;
+const PADR = 58, HR = 30, GROUND_Y = 14, CEIL = 115;
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const angDiff = (a, b) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+
+// ---------- stato ----------
+let mode = 'menu', level = 1, totalScore = 0;
+let world = null, heli = null, game = null, S = null; // S = oggetti three
+let vw = 800, vh = 600, tAnim = 0, shake = 0, toastMsg = '', toastT = 0;
+const keys = { left: false, right: false, up: false, down: false, climb: false, descend: false };
+
+const keymap = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
+  ShiftLeft: 'climb', ShiftRight: 'climb', KeyR: 'climb', KeyE: 'climb', ControlLeft: 'descend', ControlRight: 'descend', KeyF: 'descend', KeyQ: 'descend' };
+addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); if (!e.repeat) action(); return; }
+  if (e.code === 'KeyP' || e.code === 'Escape') { if (!e.repeat) togglePause(); return; }
+  const k = keymap[e.code]; if (k) { keys[k] = true; e.preventDefault(); }
+});
+addEventListener('keyup', e => { const k = keymap[e.code]; if (k) keys[k] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+document.querySelectorAll('.tb').forEach(b => {
+  const k = b.dataset.k;
+  const down = e => { e.preventDefault(); b.classList.add('p'); if (k === 'act') action(); else keys[k] = true; };
+  const up = e => { e.preventDefault(); b.classList.remove('p'); if (k !== 'act') keys[k] = false; };
+  b.addEventListener('pointerdown', down); b.addEventListener('pointerup', up);
+  b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
+});
+if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) document.body.classList.add('touch');
+function toast(m, t = 2.4) { toastMsg = m; toastT = t; }
+
+// ---------- three: renderer ----------
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true });
+const isMobile = document.body.classList.contains('touch');
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const camera = new THREE.PerspectiveCamera(62, 1, 2, 7000);
+let camYaw = 0;
+
+// ---------- generazione livello (logica) ----------
+function buildLevel(lv) {
+  const w = { buildings: [], trees: [], cones: [], blocks: [], cars: [], peds: [] };
+  let hi, hj, ai, aj, tries = 0;
+  do {
+    hi = Math.floor(Math.random() * N); hj = Math.floor(Math.random() * N);
+    ai = Math.floor(Math.random() * N); aj = Math.floor(Math.random() * N);
+    tries++;
+  } while ((() => { const d = Math.max(Math.abs(hi - ai), Math.abs(hj - aj)); return d < 2 || d > 3; })() && tries < 300);
+  const palette = ['#e6d3b3', '#d8d0ca', '#f0c08a', '#b9c8d8', '#e0a896', '#c6d8bf', '#d5dde8'];
+  const tallP = Math.min(0.75, 0.55 + lv * 0.04);
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    const bx = i * CELL + ROAD, by = j * CELL + ROAD;
+    let type = 'city';
+    if (i === hi && j === hj) type = 'hospital'; else if (i === ai && j === aj) type = 'accident'; else if (Math.random() < 0.2) type = 'park';
+    const b = { i, j, bx, by, type }; w.blocks.push(b);
+    const tree = (x, y, r) => w.trees.push({ x, y, r, trunk: 12 + 0.5 * r, top: 12 + 2.2 * r });
+    if (type === 'hospital') {
+      w.buildings.push({ x: bx + 40, y: by + 25, w: 390, h: 170, hgt: 90, color: '#f4f6f8', hospital: true });
+      tree(bx + 28, by + 270, 18); tree(bx + 442, by + 270, 18); tree(bx + 28, by + 440, 20); tree(bx + 442, by + 440, 20);
+      w.hospital = { pad: { x: bx + 235, y: by + 345 }, door: { x: bx + 235, y: by + 200 }, block: b };
+    } else if (type === 'accident') {
+      tree(bx + 26, by + 26, 20); tree(bx + 444, by + 26, 20); tree(bx + 26, by + 444, 20); tree(bx + 444, by + 444, 20);
+      const pad = { x: bx + 235, y: by + 235 };
+      w.accident = { pad, patient: { x: pad.x + 92, y: pad.y + 14 }, block: b };
+      for (let k = 0; k < 4; k++) w.cones.push({ x: bx + 330 + k * 20, y: by + 120 + k * 15 });
+      w.wreck = { x: bx + 360, y: by + 330, a: 0.7 };
+    } else if (type === 'park') {
+      const cnt = 12 + Math.floor(lv * 1.5);
+      for (let k = 0; k < cnt; k++) tree(bx + rand(30, BLK - 30), by + rand(30, BLK - 30), rand(15, 24));
+    } else {
+      const lot = 205;
+      for (let a = 0; a < 2; a++) for (let c = 0; c < 2; c++) {
+        const lx = bx + 30 + a * lot, ly = by + 30 + c * lot, r = Math.random();
+        if (r < 0.7) {
+          const sx = rand(0, 22), sy = rand(0, 22);
+          const tall = Math.random() < tallP;
+          w.buildings.push({ x: lx + sx, y: ly + sy, w: lot - 24 - sx - rand(0, 12), h: lot - 24 - sy - rand(0, 12),
+            hgt: tall ? rand(115, 190) : rand(45, 88), color: pick(palette), ac: Math.random() < 0.6 });
+        } else if (r < 0.9) {
+          const n = 2 + Math.floor(Math.random() * 3);
+          for (let k = 0; k < n; k++) tree(lx + rand(25, lot - 40), ly + rand(25, lot - 40), rand(14, 22));
+        }
+      }
+    }
+  }
+  const nCars = 36 + lv * 8;
+  for (let k = 0; k < nCars; k++) {
+    const horiz = Math.random() < 0.5, dir = Math.random() < 0.5 ? 1 : -1, r = Math.floor(Math.random() * (N + 1));
+    const c = r * CELL + ROAD / 2, lane = horiz ? (dir > 0 ? 20 : -20) : (dir > 0 ? -20 : 20);
+    w.cars.push({ horiz, dir, x: horiz ? rand(0, W) : c + lane, y: horiz ? c + lane : rand(0, W), speed: rand(70, 140),
+      color: pick(['#d94f4f', '#4f8fd9', '#e8c547', '#f2f2f2', '#3a3a3a', '#58b368', '#e08b3a']), stop: 0, truck: Math.random() < 0.2 });
+  }
+  const nPeds = 22 + lv * 6;
+  for (let k = 0; k < nPeds; k++) {
+    let a, b, pause = 0;
+    if (Math.random() < 0.5) {
+      const bl = pick(w.blocks), side = Math.floor(Math.random() * 4), o = 12;
+      if (side === 0) { a = [bl.bx + 10, bl.by + o]; b = [bl.bx + BLK - 10, bl.by + o]; }
+      else if (side === 1) { a = [bl.bx + 10, bl.by + BLK - o]; b = [bl.bx + BLK - 10, bl.by + BLK - o]; }
+      else if (side === 2) { a = [bl.bx + o, bl.by + 10]; b = [bl.bx + o, bl.by + BLK - 10]; }
+      else { a = [bl.bx + BLK - o, bl.by + 10]; b = [bl.bx + BLK - o, bl.by + BLK - 10]; }
+    } else {
+      const r = Math.floor(Math.random() * (N + 1)), i = Math.floor(Math.random() * N);
+      const t = i * CELL + ROAD + 40 + Math.random() * (BLK - 80);
+      if (Math.random() < 0.5) { a = [t, r * CELL + 8]; b = [t, r * CELL + ROAD - 8]; } else { a = [r * CELL + 8, t]; b = [r * CELL + ROAD - 8, t]; }
+      pause = 1.5;
+    }
+    w.peds.push({ a, b, p: Math.random(), dir: Math.random() < 0.5 ? 1 : -1, speed: rand(14, 24), pause, wait: 0, scared: 0, hit: 0,
+      color: pick(['#e74c3c', '#3498db', '#f1c40f', '#9b59b6', '#ecf0f1', '#1abc9c']) });
+  }
+  w.mini = renderMini(w);
+  return w;
+}
+
+function renderMini(w) {
+  const s = 170, c = document.createElement('canvas'); c.width = c.height = s;
+  const g = c.getContext('2d'), k = s / W;
+  g.fillStyle = '#3d424a'; g.fillRect(0, 0, s, s);
+  for (const b of w.blocks) { g.fillStyle = b.type === 'park' ? '#5c9a4a' : b.type === 'city' ? '#8a8a82' : '#a9aeb4'; g.fillRect(b.bx * k, b.by * k, BLK * k, BLK * k); }
+  for (const b of w.buildings) { g.fillStyle = b.hgt > 100 ? '#3f444b' : '#6a7078'; g.fillRect(b.x * k, b.y * k, b.w * k, b.h * k); }
+  g.fillStyle = '#2e7d32'; for (const t of w.trees) g.fillRect((t.x - 3) * k, (t.y - 3) * k, 6 * k, 6 * k);
+  return c;
+}
+
+// ---------- three: costruzione scena ----------
+const texCache = {};
+function windowTex(rx, ry) {
+  const key = Math.round(rx * 2) + '_' + Math.round(ry * 2);
+  if (texCache[key]) return texCache[key];
+  if (!texCache.base) {
+    const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 64, 64);
+    for (let x = 0; x < 2; x++) for (let y = 0; y < 2; y++) { g.fillStyle = (x + y) % 3 === 0 ? '#e9d38a' : '#4a6078'; g.fillRect(8 + x * 32, 8 + y * 32, 18, 20); }
+    texCache.base = new THREE.CanvasTexture(c); texCache.base.wrapS = texCache.base.wrapT = THREE.RepeatWrapping;
+    texCache.base.anisotropy = 4;
+  }
+  const t = texCache.base.clone(); t.needsUpdate = true; t.repeat.set(Math.max(1, Math.round(rx)), Math.max(1, Math.round(ry)));
+  texCache[key] = t; return t;
+}
+
+function groundTexture(w) {
+  const SZ = 4096, c = document.createElement('canvas'); c.width = c.height = SZ; const g = c.getContext('2d');
+  g.scale(SZ / W, SZ / W);
+  g.fillStyle = '#454a52'; g.fillRect(0, 0, W, W);
+  g.strokeStyle = '#e8e8e8'; g.lineWidth = 3; g.setLineDash([26, 22]);
+  for (const b of w.blocks) {
+    g.beginPath(); g.moveTo(b.bx, b.by - ROAD / 2); g.lineTo(b.bx + BLK, b.by - ROAD / 2);
+    g.moveTo(b.bx - ROAD / 2, b.by); g.lineTo(b.bx - ROAD / 2, b.by + BLK);
+    if (b.j === N - 1) { g.moveTo(b.bx, b.by + BLK + ROAD / 2); g.lineTo(b.bx + BLK, b.by + BLK + ROAD / 2); }
+    if (b.i === N - 1) { g.moveTo(b.bx + BLK + ROAD / 2, b.by); g.lineTo(b.bx + BLK + ROAD / 2, b.by + BLK); }
+    g.stroke();
+  }
+  g.setLineDash([]);
+  // strisce pedonali agli incroci
+  g.fillStyle = 'rgba(235,235,235,.85)';
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+    const x0 = i * CELL, y0 = j * CELL;
+    for (let s = 0; s < 8; s++) { g.fillRect(x0 + 6 + s * 15, y0 - 14, 8, 12); g.fillRect(x0 + 6 + s * 15, y0 + ROAD + 2, 8, 12); g.fillRect(x0 - 14, y0 + 6 + s * 15, 12, 8); g.fillRect(x0 + ROAD + 2, y0 + 6 + s * 15, 12, 8); }
+  }
+  for (const b of w.blocks) {
+    g.fillStyle = '#c9c9c2'; g.fillRect(b.bx - 10, b.by - 10, BLK + 20, BLK + 20);
+    g.fillStyle = b.type === 'park' ? '#79b35a' : (b.type === 'hospital' || b.type === 'accident') ? '#a4a9ae' : '#9a9a92';
+    g.fillRect(b.bx, b.by, BLK, BLK);
+  }
+  const pad = (p, col) => {
+    g.fillStyle = '#5a6068'; g.beginPath(); g.arc(p.x, p.y, PADR, 0, 7); g.fill();
+    g.strokeStyle = col; g.lineWidth = 6; g.beginPath(); g.arc(p.x, p.y, PADR - 5, 0, 7); g.stroke();
+    g.fillStyle = '#fff'; g.font = 'bold 62px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('H', p.x, p.y + 3);
+  };
+  pad(w.hospital.pad, '#c0392b'); pad(w.accident.pad, '#d4a017');
+  const t = new THREE.CanvasTexture(c); t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); return t;
+}
+
+function crossTex(bg) {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  if (bg) { g.fillStyle = bg; g.fillRect(0, 0, 64, 64); }
+  g.fillStyle = '#d63a3a'; g.fillRect(24, 8, 16, 48); g.fillRect(8, 24, 48, 16);
+  return new THREE.CanvasTexture(c);
+}
+
+function makePerson(color) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 10, 8), new THREE.MeshLambertMaterial({ color }));
+  body.position.y = 5; body.castShadow = true;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(2.8, 8, 8), new THREE.MeshLambertMaterial({ color: '#f2c9a0' }));
+  head.position.y = 12; head.castShadow = true;
+  g.add(body, head); g.userData.body = body; return g;
+}
+function makeCar(color, truck) {
+  const g = new THREE.Group();
+  const L = truck ? 52 : 40;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(L, 8, 20), new THREE.MeshLambertMaterial({ color }));
+  body.position.y = 6; body.castShadow = true;
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(truck ? 36 : 20, truck ? 12 : 7, 18), new THREE.MeshLambertMaterial({ color: truck ? '#eeeeee' : '#2c3a4a' }));
+  cab.position.set(truck ? -6 : -2, truck ? 14 : 13, 0); cab.castShadow = true;
+  g.add(body, cab);
+  return g;
+}
+function makeStretcher() {
+  const g = new THREE.Group();
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(32, 3, 14), new THREE.MeshLambertMaterial({ color: '#e8eef3' })); bed.position.y = 8;
+  const mat = new THREE.Mesh(new THREE.BoxGeometry(24, 2, 12), new THREE.MeshLambertMaterial({ color: '#4a90d9' })); mat.position.set(-2, 10, 0);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(4, 8, 8), new THREE.MeshLambertMaterial({ color: '#f2c9a0' })); head.position.set(12, 12, 0);
+  const p1 = makePerson('#ff8a1f'), p2 = makePerson('#ff8a1f'); p1.position.set(0, 0, -16); p2.position.set(0, 0, 16);
+  for (const m of [bed, mat, head]) m.castShadow = true;
+  g.add(bed, mat, head, p1, p2); return g;
+}
+
+function makeHeli() {
+  const g = new THREE.Group(), inner = new THREE.Group(); g.add(inner);
+  const L = (c, o) => new THREE.MeshPhongMaterial(Object.assign({ color: c, shininess: 40 }, o || {}));
+  const add = (geo, mat, x, y, z, parent) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; (parent || inner).add(m); return m; };
+  const body = add(new THREE.SphereGeometry(1, 20, 14), L('#f4f6f8'), 0, 0, 0); body.scale.set(11, 11, 22);
+  const stripe = add(new THREE.SphereGeometry(1, 20, 8), L('#d63a3a'), 0, -1, 2); stripe.scale.set(11.4, 2.6, 18);
+  const glass = add(new THREE.SphereGeometry(1, 16, 12), L('#2d5f95', { transparent: true, opacity: 0.88, shininess: 120 }), 0, 2.5, -11); glass.scale.set(8.6, 7, 10);
+  const boom = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.6, 34, 10).rotateX(Math.PI / 2), L('#f4f6f8')); boom.position.set(0, 1, 34); boom.castShadow = true; inner.add(boom);
+  add(new THREE.BoxGeometry(1.2, 14, 9), L('#f4f6f8'), 0, 6, 49);
+  add(new THREE.BoxGeometry(1.4, 4, 6), L('#d63a3a'), 0, 12, 50);
+  const tail = new THREE.Group(); tail.position.set(2.5, 6, 50); inner.add(tail);
+  add(new THREE.BoxGeometry(0.6, 12, 1.4), L('#333'), 0, 0, 0, tail); add(new THREE.BoxGeometry(0.6, 1.4, 12), L('#333'), 0, 0, 0, tail);
+  // pattini
+  for (const sx of [-10, 10]) {
+    const sk = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 36, 6).rotateX(Math.PI / 2), L('#444')); sk.position.set(sx, -13, 0); sk.castShadow = true; inner.add(sk);
+    for (const z of [-8, 8]) { const st = add(new THREE.BoxGeometry(1.2, 8, 1.2), L('#444'), sx * 0.9, -9.5, z); }
+  }
+  // sirena
+  const siren = add(new THREE.SphereGeometry(2.6, 8, 8), new THREE.MeshBasicMaterial({ color: '#ff3030' }), 0, 11.5, 2);
+  // croci
+  for (const sx of [-1, 1]) {
+    const cr = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), new THREE.MeshBasicMaterial({ map: crossTex('#ffffff'), transparent: false }));
+    cr.position.set(sx * 11.3, 2, 6); cr.rotation.y = sx * Math.PI / 2; inner.add(cr);
+  }
+  // rotore
+  const mast = add(new THREE.CylinderGeometry(1.4, 1.8, 4, 8), L('#555'), 0, 12, 0);
+  const rotor = new THREE.Group(); rotor.position.y = 14; inner.add(rotor);
+  const bm = L('#2a2e33');
+  for (const r of [0, Math.PI / 2]) { const bl = add(new THREE.BoxGeometry(92, 0.7, 3.6), bm, 0, 0, 0, rotor); bl.rotation.y = r; }
+  add(new THREE.SphereGeometry(2.4, 8, 8), L('#222'), 0, 0, 0, rotor);
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(46, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#dfe8f2', transparent: true, opacity: 0.13, depthWrite: false }));
+  disc.position.y = 14.2; inner.add(disc);
+  g.userData = { inner, rotor, tail, siren, disc };
+  return g;
+}
+
+function buildScene(w) {
+  const sc = new THREE.Scene();
+  sc.background = new THREE.Color('#a9d0f2'); sc.fog = new THREE.Fog('#bcd9f2', 900, 3200);
+  sc.add(new THREE.HemisphereLight('#dff0ff', '#6b7a58', 0.62));
+  const sun = new THREE.DirectionalLight('#fff3dd', 0.6);
+  sun.castShadow = true; const sm = isMobile ? 1024 : 2048; sun.shadow.mapSize.set(sm, sm);
+  const sc2 = sun.shadow.camera; sc2.left = -650; sc2.right = 650; sc2.top = 650; sc2.bottom = -650; sc2.near = 10; sc2.far = 2200; sun.shadow.bias = -0.0008;
+  sc.add(sun); sc.add(sun.target);
+  const O = { sc, sun };
+
+  // terreno
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(W, W).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: groundTexture(w) }));
+  ground.position.set(W / 2, 0, W / 2); ground.receiveShadow = true; sc.add(ground);
+  const outer = new THREE.Mesh(new THREE.PlaneGeometry(W * 4, W * 4).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#7fae60' }));
+  outer.position.set(W / 2, -0.5, W / 2); sc.add(outer);
+
+  // edifici
+  for (const b of w.buildings) {
+    const hgt = b.hgt, wall = b.hospital ? '#f4f6f8' : b.color;
+    const sideX = new THREE.MeshLambertMaterial({ map: windowTex(b.h / 34, hgt / 30), color: wall });
+    const sideZ = new THREE.MeshLambertMaterial({ map: windowTex(b.w / 34, hgt / 30), color: wall });
+    const roof = new THREE.MeshLambertMaterial({ color: b.hospital ? '#e6ebef' : new THREE.Color(wall).multiplyScalar(0.82) });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.w, hgt, b.h), [sideX, sideX, roof, roof, sideZ, sideZ]);
+    mesh.position.set(b.x + b.w / 2, hgt / 2, b.y + b.h / 2); mesh.castShadow = mesh.receiveShadow = true;
+    mesh.matrixAutoUpdate = false; mesh.updateMatrix(); sc.add(mesh);
+    if (b.ac) { const ac = new THREE.Mesh(new THREE.BoxGeometry(28, 8, 22), new THREE.MeshLambertMaterial({ color: '#8c949b' })); ac.position.set(b.x + 36, hgt + 4, b.y + 33); ac.castShadow = true; sc.add(ac); }
+    if (b.hospital) {
+      const cr = new THREE.Mesh(new THREE.PlaneGeometry(150, 150).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: crossTex(null), transparent: true }));
+      cr.position.set(b.x + b.w / 2, hgt + 0.6, b.y + b.h / 2); sc.add(cr);
+    }
+  }
+  // alberi (instanced)
+  const nT = w.trees.length;
+  const trunkI = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1.3, 1, 6), new THREE.MeshLambertMaterial({ color: '#6b4a2b' }), nT);
+  const leafI = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial({ color: '#ffffff' }), nT);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v3 = new THREE.Vector3(), s3 = new THREE.Vector3(), col = new THREE.Color();
+  w.trees.forEach((t, i) => {
+    m4.compose(v3.set(t.x, t.trunk / 2, t.y), q, s3.set(t.r * 0.2, t.trunk, t.r * 0.2)); trunkI.setMatrixAt(i, m4);
+    m4.compose(v3.set(t.x, t.trunk + t.r * 0.6, t.y), q, s3.set(t.r, t.r * 1.1, t.r)); leafI.setMatrixAt(i, m4);
+    col.set(pick(['#2f7d32', '#3a8f3e', '#2a7030', '#47a34b'])); leafI.setColorAt(i, col);
+  });
+  trunkI.castShadow = leafI.castShadow = true; trunkI.receiveShadow = leafI.receiveShadow = true;
+  sc.add(trunkI, leafI);
+
+  // coni, relitto
+  for (const c of w.cones) { const m = new THREE.Mesh(new THREE.ConeGeometry(3, 9, 8), new THREE.MeshLambertMaterial({ color: '#e8651a' })); m.position.set(c.x, 4.5, c.y); m.castShadow = true; sc.add(m); }
+  const wr = new THREE.Group(); wr.position.set(w.wreck.x, 0, w.wreck.y); wr.rotation.y = -w.wreck.a;
+  const wb = new THREE.Mesh(new THREE.BoxGeometry(40, 9, 20), new THREE.MeshLambertMaterial({ color: '#6f7479' })); wb.position.y = 5; wb.rotation.z = 0.12; wb.castShadow = true; wr.add(wb);
+  sc.add(wr);
+  O.smoke = [];
+  for (let k = 0; k < 5; k++) { const m = new THREE.Mesh(new THREE.SphereGeometry(7, 8, 8), new THREE.MeshLambertMaterial({ color: '#3a3a3a', transparent: true, opacity: 0.5 })); m.userData.ph = k / 5; sc.add(m); O.smoke.push(m); }
+
+  // auto
+  O.cars = w.cars.map(c => { const m = makeCar(c.color, c.truck); m.rotation.y = c.horiz ? (c.dir > 0 ? 0 : Math.PI) : (c.dir > 0 ? -Math.PI / 2 : Math.PI / 2); sc.add(m); return m; });
+  // pedoni
+  O.peds = w.peds.map(p => { const m = makePerson(p.color); m.scale.setScalar(1.3); sc.add(m); return m; });
+  // paziente / soccorritori
+  O.stretcher = makeStretcher(); sc.add(O.stretcher);
+  // fascio luminoso
+  O.beam = new THREE.Mesh(new THREE.CylinderGeometry(16, 16, 600, 20, 1, true), new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+  O.beam.position.y = 300; sc.add(O.beam);
+  O.ring = new THREE.Mesh(new THREE.RingGeometry(PADR + 4, PADR + 12, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }));
+  O.ring.position.y = 0.8; sc.add(O.ring);
+  // elicottero
+  O.heli = makeHeli(); sc.add(O.heli);
+  return O;
+}
+
+function disposeScene(O) {
+  if (!O) return;
+  O.sc.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) { const ms = Array.isArray(o.material) ? o.material : [o.material]; ms.forEach(m => { if (m.map && m.map !== texCache.base && !Object.values(texCache).includes(m.map)) m.map.dispose(); m.dispose(); }); }
+  });
+}
+
+// ---------- avvio ----------
+function startLevel(lv) {
+  level = lv;
+  disposeScene(S);
+  world = buildLevel(lv); S = buildScene(world);
+  const hp = world.hospital.pad;
+  heli = { x: hp.x, y: GROUND_Y, z: hp.y, vx: 0, vz: 0, vy: 0, a: 0, state: 'landed', hull: 100, inv: 0, pitch: 0, roll: 0, rotS: 0, yawRate: 0 };
+  game = { phase: 'toPatient', time: 50, timeMax: 50, t: 0, anim: 0, strikes: 0, hits: 0 };
+  camYaw = 0;
+  mode = 'play'; overlay.classList.add('hidden');
+  toast('Decolla (SPAZIO) e vola verso il fascio giallo!', 4);
+}
+function startMenu() {
+  disposeScene(S); world = buildLevel(1); S = buildScene(world);
+  const hp = world.hospital.pad;
+  heli = { x: hp.x, y: GROUND_Y, z: hp.y, vx: 0, vz: 0, vy: 0, a: 0, state: 'landed', hull: 100, inv: 0, pitch: 0, roll: 0, rotS: 0, yawRate: 0 };
+  game = { phase: 'toPatient', time: 50, timeMax: 50, t: 0, anim: 0, strikes: 0, hits: 0 };
+}
+
+// ---------- azione ----------
+const nearPad = p => Math.hypot(heli.x - p.x, heli.z - p.y) < PADR - 8;
+function action() {
+  if (mode === 'menu' || mode === 'end') return;
+  if (mode === 'pause') { togglePause(); return; }
+  if (mode !== 'play') return;
+  if (heli.state === 'fly') {
+    const p = [world.hospital.pad, world.accident.pad].find(nearPad);
+    if (!p) return toast('Puoi atterrare solo sull\'eliporto (cerchio con la H)');
+    if (Math.hypot(heli.vx, heli.vz) > 90) return toast('Troppo veloce! Rallenta prima di atterrare');
+    heli.state = 'landing'; heli.pad = p;
+  } else if (heli.state === 'landed') {
+    if (game.phase === 'loading' || game.phase === 'unloading') return toast('Aspetta i soccorritori…');
+    heli.state = 'takeoff';
+  }
+}
+function togglePause() {
+  if (mode === 'play') { mode = 'pause'; showPanel('<h2>⏸ Pausa</h2><p>Premi SPAZIO o P per riprendere.</p><button class="big" id="bResume">Riprendi</button>'); document.getElementById('bResume').onclick = togglePause; }
+  else if (mode === 'pause') { mode = 'play'; overlay.classList.add('hidden'); }
+}
+function showPanel(html) { panel.innerHTML = html; overlay.classList.remove('hidden'); }
+
+// ---------- collisioni ----------
+function damage(nx, nz, pen, base, label) {
+  heli.x += nx * pen; heli.z += nz * pen;
+  const vn = heli.vx * nx + heli.vz * nz;
+  if (vn < 0) { heli.vx -= 1.5 * vn * nx; heli.vz -= 1.5 * vn * nz; }
+  if (heli.inv <= 0) {
+    const d = Math.max(3, Math.min(40, Math.abs(vn) * 0.1 + base));
+    heli.hull = (heli.hull ?? 100) - d; heli.inv = 0.9; shake = 0.35; game.hits++;
+    toast(label + '!', 1.4);
+    if (heli.hull <= 0) { heli.hull = 0; endGame(false, 'L\'elicottero è stato distrutto 💥'); }
+  }
+}
+function circleRect(cx, cy, r, b) {
+  const nx = clamp(cx, b.x, b.x + b.w), ny = clamp(cy, b.y, b.y + b.h);
+  const dx = cx - nx, dy = cy - ny, d2 = dx * dx + dy * dy;
+  if (d2 >= r * r) return null;
+  if (d2 > 0) { const d = Math.sqrt(d2); return { nx: dx / d, ny: dy / d, pen: r - d }; }
+  const l = cx - b.x, rr = b.x + b.w - cx, t = cy - b.y, bt = b.y + b.h - cy, m = Math.min(l, rr, t, bt);
+  if (m === l) return { nx: -1, ny: 0, pen: r + l }; if (m === rr) return { nx: 1, ny: 0, pen: r + rr };
+  if (m === t) return { nx: 0, ny: -1, pen: r + t }; return { nx: 0, ny: 1, pen: r + bt };
+}
+function collide() {
+  const h = heli, hb = h.y - 14;
+  for (const b of world.buildings) {
+    if (hb >= b.hgt) continue;
+    if (h.x < b.x - 70 || h.x > b.x + b.w + 70 || h.z < b.y - 70 || h.z > b.y + b.h + 70) continue;
+    const c = circleRect(h.x, h.z, HR, b);
+    if (c) {
+      if (b.hgt - hb < 14) { h.y = b.hgt + 14.5; if (h.vy < 0) h.vy = 0; }
+      else damage(c.nx, c.ny, c.pen, 4, 'Edificio');
+    }
+  }
+  for (const t of world.trees) {
+    if (hb >= t.top) continue;
+    const dx = h.x - t.x, dz = h.z - t.y, rr = HR * 0.8 + t.r;
+    if (Math.abs(dx) > rr || Math.abs(dz) > rr) continue;
+    const d = Math.hypot(dx, dz);
+    if (d < rr) { const n = d || 1; damage(dx / n, dz / n, rr - d, 2, 'Albero'); }
+  }
+  for (const c of world.cars) {
+    if (hb >= (c.truck ? 26 : 18)) continue;
+    const dx = h.x - c.x, dz = h.z - c.y, rr = HR + 16;
+    if (Math.abs(dx) > rr || Math.abs(dz) > rr) continue;
+    const d = Math.hypot(dx, dz);
+    if (d < rr) { const n = d || 1; damage(dx / n, dz / n, rr - d, 3, 'Auto'); c.stop = 2.5; }
+  }
+  if (hb < 34) for (const p of world.peds) {
+    if (p.scared > 0 || p.hit > 0) continue;
+    const px = p.a[0] + (p.b[0] - p.a[0]) * p.p, pz = p.a[1] + (p.b[1] - p.a[1]) * p.p;
+    if (Math.hypot(h.x - px, h.z - pz) < HR + 6) {
+      p.scared = 3; p.hit = 6; game.strikes++;
+      toast(`Attento ai pedoni! (${game.strikes}/3)`, 2);
+      if (game.strikes >= 3) endGame(false, 'Hai spaventato troppi pedoni 😱');
+    }
+  }
+}
+
+// ---------- fine ----------
+function endGame(win, reason) {
+  if (mode === 'end') return;
+  mode = 'end';
+  if (win) {
+    const base = 1000, tb = Math.round(game.time * 10), hb = Math.round(heli.hull * 5), pen = game.strikes * 200, sc = base + tb + hb - pen;
+    totalScore += sc;
+    showPanel(`<h2>🏥 Paziente salvato!</h2><p>Livello ${level} completato</p>
+      <table class="sc"><tr><td>Missione</td><td>+${base}</td></tr><tr><td>Bonus tempo (${Math.ceil(game.time)}s)</td><td>+${tb}</td></tr>
+      <tr><td>Bonus elicottero (${Math.round(heli.hull)}%)</td><td>+${hb}</td></tr>${pen ? `<tr><td>Pedoni spaventati</td><td>−${pen}</td></tr>` : ''}
+      <tr><td><b>Totale</b></td><td>${totalScore}</td></tr></table><button class="big" id="bNext">Livello ${level + 1} ▶</button>`);
+    document.getElementById('bNext').onclick = () => startLevel(level + 1);
+    setTimeout(() => addEventListener('keydown', nextOnce), 400);
+    function nextOnce(e) { if (e.code === 'Space' || e.code === 'Enter') { removeEventListener('keydown', nextOnce); if (mode === 'end') startLevel(level + 1); } }
+  } else {
+    showPanel(`<h2>❌ Missione fallita</h2><p>${reason}</p><p>Punteggio finale: <b>${totalScore}</b> · Livello raggiunto: ${level}</p>
+      <button class="big" id="bRetry">Riprova dal livello 1</button><br><a class="back" href="index.html">← Torna ai giochi</a>`);
+    document.getElementById('bRetry').onclick = () => { totalScore = 0; startLevel(1); };
+  }
+}
+function showMenu() {
+  mode = 'menu';
+  showPanel(`<h1>🚁 Eli-Soccorso 3D</h1><p>Pilota l'elicottero dell'ambulanza sopra la città: raggiungi l'incidente, atterra, carica il paziente e riportalo in ospedale!</p>
+    <div class="modes"><div class="mode on"><span class="e">🚑</span>Ambulanza</div><div class="mode off"><span class="e">🚓</span>Polizia<br><small>presto</small></div><div class="mode off"><span class="e">🪖</span>Militare<br><small>presto</small></div></div>
+    <div class="keys"><kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> gira · <kbd>↑</kbd> / <kbd>W</kbd> avanti · <kbd>↓</kbd> / <kbd>S</kbd> frena<br>
+    <kbd>Shift</kbd> / <kbd>E</kbd> sali · <kbd>Ctrl</kbd> / <kbd>Q</kbd> scendi · <kbd>SPAZIO</kbd> atterra / decolla · <kbd>P</kbd> pausa<br>
+    ⏱️ 50 secondi per arrivare, 50 per tornare. Sali per scavalcare le case basse, ma i grattacieli no! Vola alto per evitare auto e pedoni, scendi piano per atterrare sulla H.</div>
+    <button class="big" id="bStart">Inizia la missione</button><br><a class="back" href="index.html">← Torna ai giochi</a>`);
+  document.getElementById('bStart').onclick = () => { totalScore = 0; startLevel(1); };
+}
+
+// ---------- aggiornamento logica ----------
+function update(dt) {
+  tAnim += dt;
+  if (toastT > 0) toastT -= dt;
+  if (shake > 0) shake -= dt;
+  const h = heli;
+  if (mode !== 'play') { h.rotS += dt * 20; if (mode === 'menu') { menuCam(dt); } return; }
+  game.t += dt;
+  if (game.phase === 'toPatient' || game.phase === 'return') game.time -= dt;
+  if (game.time <= 0) { game.time = 0; return endGame(false, game.phase === 'toPatient' ? 'Non sei arrivato in tempo sul luogo dell\'incidente ⏱️' : 'Il paziente non ce l\'ha fatta: tempo scaduto ⏱️'); }
+  if (h.inv > 0) h.inv -= dt;
+
+  let turn = 0;
+  if (h.state === 'fly') {
+    if (keys.left) turn -= 1; if (keys.right) turn += 1;
+    h.a += turn * 2.2 * dt; h.yawRate = turn;
+    const fx = Math.sin(h.a), fz = -Math.cos(h.a);
+    let acc = 0; if (keys.up) acc = 300; else if (keys.down) acc = -190;
+    h.vx += fx * acc * dt; h.vz += fz * acc * dt;
+    const drag = Math.exp(-(acc ? 1.1 : 1.7) * dt); h.vx *= drag; h.vz *= drag;
+    let ay = 0; if (keys.climb) ay += 160; if (keys.descend) ay -= 160;
+    h.vy += ay * dt; h.vy *= Math.exp(-3 * dt);
+    h.x += h.vx * dt; h.z += h.vz * dt; h.y += h.vy * dt;
+    h.x = clamp(h.x, 40, W - 40); h.z = clamp(h.z, 40, W - 40);
+    if (h.y > CEIL) { h.y = CEIL; if (h.vy > 0) h.vy = 0; }
+    if (h.y < GROUND_Y + 1) { h.y = GROUND_Y + 1; if (h.vy < 0) h.vy = 0; }
+    h.rotS += dt * 40;
+    collide();
+  } else if (h.state === 'landing') {
+    h.vx *= Math.exp(-4 * dt); h.vz *= Math.exp(-4 * dt); h.yawRate = 0;
+    h.x += (h.pad.x - h.x) * Math.min(1, 3 * dt); h.z += (h.pad.y - h.z) * Math.min(1, 3 * dt);
+    h.y = Math.max(GROUND_Y, h.y - 45 * dt); h.vy = 0; h.rotS += dt * 40;
+    if (h.y <= GROUND_Y) { h.state = 'landed'; onLanded(); }
+  } else if (h.state === 'takeoff') {
+    h.y += 45 * dt; h.rotS += dt * 40; h.yawRate = 0;
+    if (h.y >= 50) { h.y = 50; h.state = 'fly'; }
+  } else { h.rotS += dt * 14; h.yawRate = 0; h.y = GROUND_Y; }
+
+  // inclinazione visiva
+  const fwd = h.vx * Math.sin(h.a) + h.vz * -Math.cos(h.a);
+  h.pitch += (clamp(fwd / 215, -1, 1) * 0.22 - h.pitch) * Math.min(1, 5 * dt);
+  h.roll += (h.yawRate * 0.3 - h.roll) * Math.min(1, 5 * dt);
+
+  if (game.phase === 'loading' || game.phase === 'unloading') {
+    game.anim += dt / 3.8;
+    if (game.anim >= 1) {
+      if (game.phase === 'loading') { game.phase = 'return'; game.anim = 0; game.time = game.timeMax = 50; toast('Paziente a bordo! 50 secondi per l\'ospedale 🏥', 4); }
+      else endGame(true);
+    }
+  }
+  for (const c of world.cars) {
+    if (c.stop > 0) { c.stop -= dt; continue; }
+    if (c.horiz) { c.x += c.dir * c.speed * dt; if (c.x > W + 30) c.x = -30; if (c.x < -30) c.x = W + 30; }
+    else { c.y += c.dir * c.speed * dt; if (c.y > W + 30) c.y = -30; if (c.y < -30) c.y = W + 30; }
+  }
+  for (const p of world.peds) {
+    if (p.hit > 0) p.hit -= dt;
+    if (p.scared > 0) { p.scared -= dt; continue; }
+    if (p.wait > 0) { p.wait -= dt; continue; }
+    const len = Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1]);
+    p.p += p.dir * p.speed * dt / len;
+    if (p.p >= 1) { p.p = 1; p.dir = -1; p.wait = p.pause ? rand(0.5, 2.5) : 0; }
+    if (p.p <= 0) { p.p = 0; p.dir = 1; p.wait = p.pause ? rand(0.5, 2.5) : 0; }
+  }
+}
+function onLanded() {
+  if (game.phase === 'toPatient' && heli.pad === world.accident.pad) { game.phase = 'loading'; game.anim = 0; toast('I soccorritori stanno caricando il paziente…', 3.5); }
+  else if (game.phase === 'return' && heli.pad === world.hospital.pad) { game.phase = 'unloading'; game.anim = 0; toast('Il paziente viene portato al pronto soccorso…', 3.5); }
+  else if (game.phase === 'toPatient') toast('Questo è l\'ospedale: vai dove c\'è l\'incidente!');
+  else if (game.phase === 'return') toast('Il paziente deve andare in ospedale!');
+}
+
+// ---------- aggiornamento scena ----------
+let menuAng = 0;
+function menuCam(dt) { menuAng += dt * 0.15; }
+function updateScene(dt) {
+  const h = heli, O = S;
+  // elicottero
+  O.heli.position.set(h.x, h.y, h.z);
+  O.heli.rotation.set(0, -h.a, 0);
+  O.heli.userData.inner.rotation.set(h.pitch, 0, -h.roll, 'YXZ');
+  O.heli.userData.rotor.rotation.y = h.rotS;
+  O.heli.userData.tail.rotation.x = h.rotS * 1.4;
+  O.heli.userData.siren.material.color.set(Math.floor(tAnim * 4) % 2 ? '#ff3030' : '#3070ff');
+  O.heli.visible = !(h.inv > 0 && Math.floor(h.inv * 14) % 2);
+  // sole/ombre
+  O.sun.position.set(h.x + 380, 900, h.z + 260); O.sun.target.position.set(h.x, 0, h.z);
+  // auto
+  world.cars.forEach((c, i) => { O.cars[i].position.set(c.x, 0, c.y); });
+  // pedoni
+  world.peds.forEach((p, i) => {
+    const m = O.peds[i]; m.position.set(p.a[0] + (p.b[0] - p.a[0]) * p.p, 0, p.a[1] + (p.b[1] - p.a[1]) * p.p);
+    m.userData.body.material.color.set(p.scared > 0 ? '#ff3b3b' : p.color);
+    m.position.y = p.scared > 0 ? Math.abs(Math.sin(tAnim * 14)) * 3 : 0;
+  });
+  // barella
+  const ac = world.accident, hs = world.hospital, st = O.stretcher;
+  st.visible = false;
+  if (game.phase === 'toPatient') { st.visible = true; st.position.set(ac.patient.x, 0, ac.patient.y); st.rotation.y = -0.3; }
+  else if (game.phase === 'loading' || game.phase === 'unloading') {
+    const A = game.phase === 'loading' ? ac.patient : hs.pad, B = game.phase === 'loading' ? ac.pad : hs.door;
+    const t = clamp(game.anim, 0, 1);
+    if (!(game.phase === 'loading' && t > 0.85)) {
+      st.visible = true; st.position.set(A.x + (B.x - A.x) * t, 0, A.y + (B.y - A.y) * t); st.rotation.y = -Math.atan2(B.y - A.y, B.x - A.x);
+    }
+  }
+  // fumo
+  O.smoke.forEach(m => { const ph = (tAnim * 0.25 + m.userData.ph) % 1; m.position.set(world.wreck.x + Math.sin(ph * 6 + m.userData.ph * 9) * 6, 12 + ph * 70, world.wreck.y); m.scale.setScalar(0.6 + ph * 1.6); m.material.opacity = 0.55 * (1 - ph); });
+  // fascio sul bersaglio
+  const tg = (game.phase === 'return' || game.phase === 'unloading') ? hs.pad : ac.pad;
+  const show = mode !== 'menu' && (game.phase === 'toPatient' || game.phase === 'return');
+  O.beam.visible = O.ring.visible = show;
+  O.beam.position.set(tg.x, 300, tg.y); O.ring.position.set(tg.x, 0.8, tg.y);
+  O.beam.material.color.set(game.phase === 'return' ? '#ff6b5e' : '#ffe066'); O.ring.material.color.set(game.phase === 'return' ? '#ff6b5e' : '#ffe066');
+  O.beam.material.opacity = 0.25 + 0.15 * Math.sin(tAnim * 4); O.ring.scale.setScalar(1 + 0.08 * Math.sin(tAnim * 5));
+
+  // camera
+  if (mode === 'menu') {
+    const R = 220, cx = hs.pad.x, cz = hs.pad.y;
+    camera.position.set(cx + Math.sin(menuAng) * R, 90, cz + Math.cos(menuAng) * R); camera.lookAt(cx, 30, cz);
+  } else {
+    camYaw += angDiff(camYaw, h.a) * Math.min(1, 2.6 * dt);
+    const D = 150, up = 62;
+    const bx = h.x - Math.sin(camYaw) * D, bz = h.z + Math.cos(camYaw) * D;
+    let by = h.y + up; by = Math.max(by, 12);
+    let sx = 0, sy = 0; if (shake > 0) { sx = rand(-4, 4) * shake * 2; sy = rand(-4, 4) * shake * 2; }
+    camera.position.set(bx + sx, by + sy, bz);
+    camera.lookAt(h.x + Math.sin(camYaw) * 70, h.y - 4, h.z - Math.cos(camYaw) * 70);
+  }
+}
+
+// ---------- HUD ----------
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function bar(x, y, w, h, f, col, label) {
+  ctx.fillStyle = 'rgba(255,255,255,.2)'; rr(x, y, w, h, 6); ctx.fill();
+  ctx.fillStyle = col; rr(x, y, Math.max(h, w * clamp(f, 0, 1)), h, 6); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.fillText(label, x, y + h + 11);
+}
+function drawHUD() {
+  ctx.clearRect(0, 0, vw, vh);
+  if (!world || mode === 'menu') return;
+  const pad = 12, h = heli;
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(8,18,32,.62)'; rr(pad, pad, 240, 114, 10); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif';
+  ctx.fillText(`🚑 Livello ${level}   ⭐ ${totalScore}`, pad + 12, pad + 22);
+  bar(pad + 12, pad + 34, 216, 12, h.hull / 100, h.hull > 50 ? '#4cd964' : h.hull > 25 ? '#ffcc00' : '#ff3b30', '🔧 Elicottero');
+  const pf = game.time / game.timeMax;
+  bar(pad + 12, pad + 70, 216, 12, pf, pf > 0.5 ? '#4aa8ff' : pf > 0.25 ? '#ffcc00' : '#ff3b30',
+    (game.phase === 'toPatient' ? '⏱️ Arrivo all\'incidente · ' : game.phase === 'loading' ? '🧑‍⚕️ Caricamento · ' : game.phase === 'unloading' ? '🧑‍⚕️ Consegna · ' : '❤️ Paziente · ') + Math.ceil(game.time) + 's');
+  ctx.fillStyle = '#fff'; ctx.font = '12px sans-serif'; ctx.fillText(`👥 Pedoni spaventati: ${game.strikes}/3`, pad + 12, pad + 104);
+
+  const obj = { toPatient: '🎯 Vola verso il fascio giallo e atterra sulla H', loading: '🧑‍⚕️ Caricamento paziente…', return: '🏥 Porta il paziente all\'ospedale (fascio rosso)', unloading: '🧑‍⚕️ Consegna al pronto soccorso…' }[game.phase];
+  ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
+  const tw = ctx.measureText(obj).width + 28;
+  ctx.fillStyle = 'rgba(8,18,32,.62)'; rr(vw / 2 - tw / 2, pad, tw, 32, 16); ctx.fill();
+  ctx.fillStyle = '#ffd166'; ctx.fillText(obj, vw / 2, pad + 21);
+
+  // bussola verso il bersaglio
+  const tg = (game.phase === 'return' || game.phase === 'unloading') ? world.hospital.pad : world.accident.pad;
+  const dx = tg.x - h.x, dz = tg.y - h.z, dist = Math.hypot(dx, dz);
+  const rel = Math.atan2(dx, -dz) - h.a;
+  const cx = vw / 2, cy = pad + 82;
+  ctx.fillStyle = 'rgba(8,18,32,.62)'; ctx.beginPath(); ctx.arc(cx, cy, 30, 0, 7); ctx.fill();
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rel);
+  ctx.fillStyle = game.phase === 'return' ? '#ff6b5e' : '#ffe066'; ctx.beginPath(); ctx.moveTo(0, -22); ctx.lineTo(-12, 12); ctx.lineTo(0, 6); ctx.lineTo(12, 12); ctx.closePath(); ctx.fill(); ctx.restore();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(Math.round(dist / 3) + ' m', cx, cy + 46);
+
+  if (toastT > 0) {
+    ctx.font = 'bold 17px sans-serif'; const w2 = ctx.measureText(toastMsg).width + 34;
+    ctx.globalAlpha = Math.min(1, toastT * 2); ctx.fillStyle = 'rgba(0,0,0,.72)'; rr(vw / 2 - w2 / 2, vh * 0.2, w2, 36, 18); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(toastMsg, vw / 2, vh * 0.2 + 24); ctx.globalAlpha = 1;
+  }
+  const sp = Math.hypot(h.vx, h.vz);
+  ctx.textAlign = 'center'; ctx.font = 'bold 18px sans-serif';
+  if (h.state === 'fly') {
+    const near = [world.hospital.pad, world.accident.pad].find(nearPad);
+    if (near) { const ok = sp <= 90; ctx.fillStyle = ok ? '#7dff9a' : '#ffb347'; ctx.fillText(ok ? 'SPAZIO per atterrare' : 'Rallenta per atterrare… (' + Math.round(sp) + ')', vw / 2, vh - 130); }
+  } else if (h.state === 'landed' && game.phase !== 'loading' && game.phase !== 'unloading') { ctx.fillStyle = '#7dff9a'; ctx.fillText('SPAZIO per decollare', vw / 2, vh - 130); }
+
+  // strumenti
+  const tb = isMobile ? 190 : 24;
+  ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(`Velocità ${Math.round(sp / 3)} km/h`, pad, vh - tb);
+  ctx.fillText(`Quota ${Math.max(0, Math.round((h.y - GROUND_Y) / 3))} m`, pad, vh - tb - 18);
+  // minimappa
+  const ms = 150, mx = vw - ms - pad, my = pad, k = ms / W;
+  ctx.fillStyle = 'rgba(8,18,32,.7)'; rr(mx - 4, my - 4, ms + 8, ms + 8, 8); ctx.fill();
+  ctx.drawImage(world.mini, mx, my, ms, ms);
+  const dot = (p, c, r) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(mx + p.x * k, my + p.y * k, r, 0, 7); ctx.fill(); };
+  dot(world.hospital.pad, '#ff3b30', 4); dot(world.accident.pad, '#ffd60a', 4);
+  ctx.save(); ctx.translate(mx + h.x * k, my + h.z * k); ctx.rotate(h.a); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(-4, 4); ctx.lineTo(4, 4); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+}
+
+// ---------- ciclo ----------
+function resize() {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  vw = innerWidth; vh = innerHeight;
+  renderer.setPixelRatio(dpr); renderer.setSize(vw, vh, false);
+  hudc.width = vw * dpr; hudc.height = vh * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  camera.aspect = vw / vh; camera.fov = vw / vh < 1 ? 75 : 62; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (world) { update(dt); updateScene(dt); renderer.render(S.sc, camera); drawHUD(); }
+  requestAnimationFrame(loop);
+}
+startMenu(); showMenu();
+requestAnimationFrame(loop);
+window.__game = { get state() { return { mode, heli, game, world, level, S }; }, keys, action, camera };
+})();
+</script>
+</body>
+</html>
