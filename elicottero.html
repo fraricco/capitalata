@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Eli-Soccorso - Elicottero Ambulanza</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1b2a3a; font-family: 'Segoe UI', Tahoma, sans-serif; color: #fff; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  #overlay {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 20, 35, 0.78); padding: 16px; z-index: 10;
+  }
+  #overlay.hidden { display: none; }
+  .panel {
+    background: rgba(255,255,255,0.1); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 16px; padding: 26px 28px; max-width: 560px; width: 100%; text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4); max-height: 100%; overflow: auto;
+  }
+  .panel h1 { font-size: 2.2rem; margin-bottom: 6px; }
+  .panel h2 { font-size: 1.7rem; margin-bottom: 10px; }
+  .panel p { opacity: 0.9; line-height: 1.5; margin-bottom: 12px; }
+  .modes { display: flex; gap: 10px; margin: 14px 0; }
+  .mode { flex: 1; border-radius: 10px; padding: 10px 6px; border: 2px solid rgba(255,255,255,0.2); font-size: 0.85rem; }
+  .mode .e { font-size: 2rem; display: block; }
+  .mode.on { border-color: #ffb347; background: rgba(255,179,71,0.18); }
+  .mode.off { opacity: 0.45; }
+  .keys { text-align: left; font-size: 0.92rem; background: rgba(0,0,0,0.25); border-radius: 10px; padding: 10px 14px; margin: 10px 0 16px; line-height: 1.7; }
+  kbd { background: rgba(255,255,255,0.2); border-radius: 4px; padding: 1px 6px; font-family: inherit; font-size: 0.85em; }
+  button.big {
+    background: #ffb347; color: #1e3c72; font-weight: 700; font-size: 1.1rem; border: none;
+    border-radius: 10px; padding: 12px 30px; cursor: pointer; margin: 4px;
+  }
+  button.big:hover { filter: brightness(1.08); }
+  a.back { color: #fff; opacity: 0.7; display: inline-block; margin-top: 8px; font-size: 0.9rem; }
+  table.sc { margin: 8px auto 14px; text-align: left; border-collapse: collapse; }
+  table.sc td { padding: 3px 12px; }
+  table.sc td:last-child { text-align: right; font-weight: 700; color: #ffd166; }
+  #touch { position: fixed; inset: 0; pointer-events: none; z-index: 5; display: none; }
+  body.touch #touch { display: block; }
+  .tb {
+    position: absolute; pointer-events: auto; width: 68px; height: 68px; border-radius: 50%;
+    background: rgba(255,255,255,0.22); border: 2px solid rgba(255,255,255,0.5); color: #fff;
+    font-size: 1.6rem; display: flex; align-items: center; justify-content: center; user-select: none; touch-action: none;
+  }
+  .tb:active, .tb.p { background: rgba(255,179,71,0.6); }
+  #bL { left: 14px; bottom: 28px; } #bR { left: 94px; bottom: 28px; }
+  #bU { right: 94px; bottom: 28px; } #bD { right: 14px; bottom: 28px; }
+  #bA { right: 14px; bottom: 112px; width: 84px; height: 84px; font-size: 0.85rem; font-weight: 700; background: rgba(46,160,67,0.55); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="touch">
+  <div class="tb" id="bL" data-k="left">◀</div>
+  <div class="tb" id="bR" data-k="right">▶</div>
+  <div class="tb" id="bU" data-k="up">▲</div>
+  <div class="tb" id="bD" data-k="down">▼</div>
+  <div class="tb" id="bA" data-k="act">ATTERRA<br>/ DECOLLA</div>
+</div>
+
+<div id="overlay"><div class="panel" id="panel"></div></div>
+
+<script>
+(() => {
+'use strict';
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const overlay = document.getElementById('overlay');
+const panel = document.getElementById('panel');
+
+// ---------- costanti mondo ----------
+const N = 7, CELL = 600, ROAD = 130, BLK = 470, W = N * CELL + ROAD;
+const PADR = 58;          // raggio eliporto
+const HR = 26;            // raggio collisione elicottero
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ---------- stato ----------
+let mode = 'menu';        // menu | play | pause | end
+let level = 1, totalScore = 0;
+let world = null, heli = null, game = null;
+let vw = 800, vh = 600, zoom = 1, dpr = 1;
+let shake = 0, toastMsg = '', toastT = 0, tAnim = 0;
+const keys = { left: false, right: false, up: false, down: false };
+
+// ---------- input ----------
+const keymap = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down' };
+addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter') {
+    e.preventDefault();
+    if (!e.repeat) action();
+    return;
+  }
+  if (e.code === 'KeyP' || e.code === 'Escape') { if (!e.repeat) togglePause(); return; }
+  const k = keymap[e.code];
+  if (k) { keys[k] = true; e.preventDefault(); }
+});
+addEventListener('keyup', e => { const k = keymap[e.code]; if (k) keys[k] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+document.querySelectorAll('.tb').forEach(b => {
+  const k = b.dataset.k;
+  const down = e => { e.preventDefault(); b.classList.add('p'); if (k === 'act') action(); else keys[k] = true; };
+  const up = e => { e.preventDefault(); b.classList.remove('p'); if (k !== 'act') keys[k] = false; };
+  b.addEventListener('pointerdown', down);
+  b.addEventListener('pointerup', up);
+  b.addEventListener('pointercancel', up);
+  b.addEventListener('pointerleave', up);
+});
+if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) document.body.classList.add('touch');
+
+function toast(msg, t = 2.4) { toastMsg = msg; toastT = t; }
+
+// ---------- generazione livello ----------
+function buildLevel(lv) {
+  const w = { buildings: [], trees: [], cones: [], blocks: [], cars: [], peds: [] };
+  // scelta blocchi ospedale / incidente
+  let hi, hj, ai, aj, tries = 0;
+  do {
+    hi = Math.floor(Math.random() * N); hj = Math.floor(Math.random() * N);
+    ai = Math.floor(Math.random() * N); aj = Math.floor(Math.random() * N);
+    tries++;
+  } while (Math.max(Math.abs(hi - ai), Math.abs(hj - aj)) < Math.min(3, 2 + (lv > 2 ? 1 : 0)) && tries < 200);
+
+  const palette = ['#c9b79c', '#b0a6a0', '#d4a373', '#9aa5b1', '#c08a7a', '#a7b8a0', '#b9c4d0'];
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    const bx = i * CELL + ROAD, by = j * CELL + ROAD;
+    let type = 'city';
+    if (i === hi && j === hj) type = 'hospital';
+    else if (i === ai && j === aj) type = 'accident';
+    else if (Math.random() < 0.22) type = 'park';
+    const b = { i, j, bx, by, type };
+    w.blocks.push(b);
+    if (type === 'hospital') {
+      w.buildings.push({ x: bx + 40, y: by + 25, w: 390, h: 170, color: '#eef1f4', roof: '#dfe5ea', hospital: true });
+      w.trees.push({ x: bx + 28, y: by + 270, r: 18 }, { x: bx + 442, y: by + 270, r: 18 },
+                   { x: bx + 28, y: by + 440, r: 20 }, { x: bx + 442, y: by + 440, r: 20 });
+      w.hospital = { pad: { x: bx + 235, y: by + 345 }, door: { x: bx + 235, y: by + 200 }, block: b };
+    } else if (type === 'accident') {
+      w.trees.push({ x: bx + 26, y: by + 26, r: 20 }, { x: bx + 444, y: by + 26, r: 20 },
+                   { x: bx + 26, y: by + 444, r: 20 }, { x: bx + 444, y: by + 444, r: 20 });
+      const pad = { x: bx + 235, y: by + 235 };
+      w.accident = { pad, patient: { x: pad.x + 88, y: pad.y + 14 }, block: b };
+      w.cones.push({ x: bx + 330, y: by + 120 }, { x: bx + 350, y: by + 135 }, { x: bx + 370, y: by + 150 }, { x: bx + 390, y: by + 165 });
+      w.wreck = { x: bx + 360, y: by + 330, a: 0.7 };
+    } else if (type === 'park') {
+      const cnt = 12 + Math.floor(lv * 1.5);
+      for (let k = 0; k < cnt; k++) w.trees.push({ x: bx + rand(30, BLK - 30), y: by + rand(30, BLK - 30), r: rand(15, 24) });
+    } else {
+      const lot = 205;
+      for (let a = 0; a < 2; a++) for (let c = 0; c < 2; c++) {
+        const lx = bx + 30 + a * (lot + 0), ly = by + 30 + c * (lot + 0);
+        const r = Math.random();
+        if (r < 0.68) {
+          const sx = rand(0, 22), sy = rand(0, 22);
+          w.buildings.push({ x: lx + sx, y: ly + sy, w: lot - 24 - sx - rand(0, 12), h: lot - 24 - sy - rand(0, 12),
+            color: pick(palette), roof: null, ac: Math.random() < 0.6 });
+        } else if (r < 0.9) {
+          const n = 2 + Math.floor(Math.random() * 3);
+          for (let k = 0; k < n; k++) w.trees.push({ x: lx + rand(25, lot - 40), y: ly + rand(25, lot - 40), r: rand(14, 22) });
+        }
+      }
+    }
+  }
+  // elicottero
+  const hp = w.hospital.pad;
+  // traffico
+  const nCars = 36 + lv * 8;
+  for (let k = 0; k < nCars; k++) {
+    const horiz = Math.random() < 0.5, dir = Math.random() < 0.5 ? 1 : -1, r = Math.floor(Math.random() * (N + 1));
+    const c = r * CELL + ROAD / 2;
+    const lane = horiz ? (dir > 0 ? 20 : -20) : (dir > 0 ? -20 : 20);
+    w.cars.push({ horiz, dir, x: horiz ? rand(0, W) : c + lane, y: horiz ? c + lane : rand(0, W), speed: rand(70, 140),
+      color: pick(['#d94f4f', '#4f8fd9', '#e8c547', '#f2f2f2', '#3a3a3a', '#58b368', '#e08b3a']), stop: 0, truck: Math.random() < 0.2 });
+  }
+  // pedoni
+  const nPeds = 22 + lv * 6;
+  for (let k = 0; k < nPeds; k++) {
+    let a, b, pause = 0;
+    if (Math.random() < 0.5) { // marciapiede
+      const bl = pick(w.blocks), side = Math.floor(Math.random() * 4);
+      const o = 12;
+      if (side === 0) { a = [bl.bx + 10, bl.by + o]; b = [bl.bx + BLK - 10, bl.by + o]; }
+      else if (side === 1) { a = [bl.bx + 10, bl.by + BLK - o]; b = [bl.bx + BLK - 10, bl.by + BLK - o]; }
+      else if (side === 2) { a = [bl.bx + o, bl.by + 10]; b = [bl.bx + o, bl.by + BLK - 10]; }
+      else { a = [bl.bx + BLK - o, bl.by + 10]; b = [bl.bx + BLK - o, bl.by + BLK - 10]; }
+    } else { // attraversamento
+      const r = Math.floor(Math.random() * (N + 1)), i = Math.floor(Math.random() * N);
+      const t = i * CELL + ROAD + 40 + Math.random() * (BLK - 80);
+      if (Math.random() < 0.5) { a = [t, r * CELL + 8]; b = [t, r * CELL + ROAD - 8]; }
+      else { a = [r * CELL + 8, t]; b = [r * CELL + ROAD - 8, t]; }
+      pause = 1.5;
+    }
+    w.peds.push({ a, b, p: Math.random(), dir: Math.random() < 0.5 ? 1 : -1, speed: rand(14, 24), pause, wait: 0, scared: 0, hit: 0,
+      color: pick(['#e74c3c', '#3498db', '#f1c40f', '#9b59b6', '#ecf0f1', '#1abc9c']) });
+  }
+  w.dist = Math.hypot(w.hospital.pad.x - w.accident.pad.x, w.hospital.pad.y - w.accident.pad.y);
+  w.mini = renderMini(w);
+  return w;
+}
+
+function renderMini(w) {
+  const s = 170, c = document.createElement('canvas'); c.width = c.height = s;
+  const g = c.getContext('2d'), k = s / W;
+  g.fillStyle = '#3d424a'; g.fillRect(0, 0, s, s);
+  for (const b of w.blocks) {
+    g.fillStyle = b.type === 'park' ? '#5c9a4a' : b.type === 'city' ? '#8a8a82' : '#a9aeb4';
+    g.fillRect(b.bx * k, b.by * k, BLK * k, BLK * k);
+  }
+  g.fillStyle = '#5a5f66';
+  for (const b of w.buildings) g.fillRect(b.x * k, b.y * k, b.w * k, b.h * k);
+  g.fillStyle = '#2e7d32';
+  for (const t of w.trees) g.fillRect((t.x - 3) * k, (t.y - 3) * k, 6 * k, 6 * k);
+  return c;
+}
+
+// ---------- avvio partita ----------
+function startLevel(lv) {
+  level = lv;
+  world = buildLevel(lv);
+  const hp = world.hospital.pad;
+  heli = { x: hp.x, y: hp.y, vx: 0, vy: 0, a: 0, z: 0, state: 'landed', rot: 0, hull: 100, inv: 0, flash: 0 };
+  const tl = Math.max(45, Math.round(world.dist / 150 * 2 + 36 - (lv - 1) * 4));
+  game = { phase: 'toPatient', time: tl, timeMax: tl, t: 0, anim: 0, strikes: 0, score: 0, hits: 0 };
+  cam.x = heli.x; cam.y = heli.y;
+  mode = 'play';
+  overlay.classList.add('hidden');
+  toast('Decolla (SPAZIO) e raggiungi il luogo dell\'incidente!', 4);
+}
+
+const cam = { x: 0, y: 0 };
+
+// ---------- azione (atterra / decolla) ----------
+function nearPad(p) { return Math.hypot(heli.x - p.x, heli.y - p.y) < PADR - 8; }
+function action() {
+  if (mode === 'menu' || mode === 'end') return;
+  if (mode === 'pause') { togglePause(); return; }
+  if (mode !== 'play') return;
+  if (heli.state === 'fly') {
+    const pads = [world.hospital.pad, world.accident.pad];
+    const p = pads.find(nearPad);
+    if (!p) return toast('Puoi atterrare solo sull\'eliporto (cerchio con la H)');
+    if (Math.hypot(heli.vx, heli.vy) > 90) return toast('Troppo veloce! Rallenta prima di atterrare');
+    heli.state = 'landing'; heli.pad = p;
+  } else if (heli.state === 'landed') {
+    if (game.phase === 'loading' || game.phase === 'unloading') return toast('Aspetta i soccorritori…');
+    heli.state = 'takeoff';
+  }
+}
+function togglePause() {
+  if (mode === 'play') { mode = 'pause'; showPanel('<h2>⏸ Pausa</h2><p>Premi SPAZIO o P per riprendere.</p><button class="big" id="bResume">Riprendi</button>'); document.getElementById('bResume').onclick = togglePause; }
+  else if (mode === 'pause') { mode = 'play'; overlay.classList.add('hidden'); }
+}
+function showPanel(html) { panel.innerHTML = html; overlay.classList.remove('hidden'); }
+
+// ---------- danni ----------
+function damage(nx, ny, pen, dmgBase, label) {
+  heli.x += nx * pen; heli.y += ny * pen;
+  const vn = heli.vx * nx + heli.vy * ny;
+  if (vn < 0) { heli.vx -= 1.5 * vn * nx; heli.vy -= 1.5 * vn * ny; }
+  if (heli.inv <= 0) {
+    const d = Math.max(3, Math.min(40, Math.abs(vn) * 0.1 + dmgBase));
+    heli.hull -= d; heli.inv = 0.9; shake = 0.35; game.hits++;
+    toast(label + '!', 1.4);
+    if (heli.hull <= 0) { heli.hull = 0; endGame(false, 'L\'elicottero è stato distrutto 💥'); }
+  }
+}
+function circleRect(cx, cy, r, b) {
+  const nx = clamp(cx, b.x, b.x + b.w), ny = clamp(cy, b.y, b.y + b.h);
+  let dx = cx - nx, dy = cy - ny; const d2 = dx * dx + dy * dy;
+  if (d2 >= r * r) return null;
+  if (d2 > 0) { const d = Math.sqrt(d2); return { nx: dx / d, ny: dy / d, pen: r - d }; }
+  const l = cx - b.x, rr = b.x + b.w - cx, t = cy - b.y, bt = b.y + b.h - cy, m = Math.min(l, rr, t, bt);
+  if (m === l) return { nx: -1, ny: 0, pen: r + l }; if (m === rr) return { nx: 1, ny: 0, pen: r + rr };
+  if (m === t) return { nx: 0, ny: -1, pen: r + t }; return { nx: 0, ny: 1, pen: r + bt };
+}
+
+// ---------- fine partita ----------
+function endGame(win, reason) {
+  mode = 'end';
+  if (win) {
+    const base = 1000, tb = Math.round(game.time * 10), hb = Math.round(heli.hull * 5), pen = game.strikes * 200;
+    const sc = base + tb + hb - pen;
+    totalScore += sc;
+    showPanel(`<h2>🏥 Paziente salvato!</h2><p>Livello ${level} completato</p>
+      <table class="sc"><tr><td>Missione</td><td>+${base}</td></tr>
+      <tr><td>Bonus tempo (${Math.ceil(game.time)}s)</td><td>+${tb}</td></tr>
+      <tr><td>Bonus elicottero (${Math.round(heli.hull)}%)</td><td>+${hb}</td></tr>
+      ${pen ? `<tr><td>Pedoni spaventati</td><td>−${pen}</td></tr>` : ''}
+      <tr><td><b>Totale</b></td><td>${totalScore}</td></tr></table>
+      <button class="big" id="bNext">Livello ${level + 1} ▶</button>`);
+    const n = document.getElementById('bNext'); n.onclick = () => startLevel(level + 1);
+    setTimeout(() => { addEventListener('keydown', nextOnce); }, 400);
+    function nextOnce(e) { if (e.code === 'Space' || e.code === 'Enter') { removeEventListener('keydown', nextOnce); if (mode === 'end') startLevel(level + 1); } }
+  } else {
+    showPanel(`<h2>❌ Missione fallita</h2><p>${reason}</p><p>Punteggio finale: <b>${totalScore}</b> · Livello raggiunto: ${level}</p>
+      <button class="big" id="bRetry">Riprova dal livello 1</button><br><a class="back" href="index.html">← Torna ai giochi</a>`);
+    document.getElementById('bRetry').onclick = () => { totalScore = 0; startLevel(1); };
+  }
+}
+
+function showMenu() {
+  mode = 'menu';
+  showPanel(`<h1>🚁 Eli-Soccorso</h1><p>Pilota l'elicottero dell'ambulanza: raggiungi l'incidente, atterra, carica il paziente e riportalo in ospedale!</p>
+    <div class="modes">
+      <div class="mode on"><span class="e">🚑</span>Ambulanza</div>
+      <div class="mode off"><span class="e">🚓</span>Polizia<br><small>presto</small></div>
+      <div class="mode off"><span class="e">🪖</span>Militare<br><small>presto</small></div>
+    </div>
+    <div class="keys"><kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> ruota<br>
+    <kbd>↑</kbd> / <kbd>W</kbd> avanti · <kbd>↓</kbd> / <kbd>S</kbd> frena e retromarcia<br>
+    <kbd>SPAZIO</kbd> atterra / decolla (sul cerchio H, piano!) · <kbd>P</kbd> pausa<br>
+    Evita <b>alberi, case, auto</b> e non spaventare i <b>pedoni</b>.</div>
+    <button class="big" id="bStart">Inizia la missione</button><br><a class="back" href="index.html">← Torna ai giochi</a>`);
+  document.getElementById('bStart').onclick = () => { totalScore = 0; startLevel(1); };
+}
+
+// ---------- aggiornamento ----------
+function update(dt) {
+  tAnim += dt;
+  if (toastT > 0) toastT -= dt;
+  if (shake > 0) shake -= dt;
+  if (mode !== 'play') { heli && (heli.rot += dt * 10); return; }
+  game.t += dt;
+  game.time -= dt;
+  if (game.time <= 0) { game.time = 0; return endGame(false, 'Il paziente non ce l\'ha fatta: tempo scaduto ⏱️'); }
+  if (heli.inv > 0) heli.inv -= dt;
+
+  // controllo elicottero
+  const h = heli;
+  if (h.state === 'fly') {
+    if (keys.left) h.a -= 2.3 * dt;
+    if (keys.right) h.a += 2.3 * dt;
+    const fx = Math.sin(h.a), fy = -Math.cos(h.a);
+    if (keys.up) { h.vx += fx * 300 * dt; h.vy += fy * 300 * dt; }
+    if (keys.down) { h.vx -= fx * 190 * dt; h.vy -= fy * 190 * dt; }
+    const drag = Math.exp(-(keys.up || keys.down ? 1.1 : 1.7) * dt);
+    h.vx *= drag; h.vy *= drag;
+    h.x += h.vx * dt; h.y += h.vy * dt;
+    h.rot += dt * 40;
+    h.x = clamp(h.x, 40, W - 40); h.y = clamp(h.y, 40, W - 40);
+    collide();
+  } else if (h.state === 'landing') {
+    h.vx *= Math.exp(-4 * dt); h.vy *= Math.exp(-4 * dt);
+    h.x += (h.pad.x - h.x) * Math.min(1, 3 * dt); h.y += (h.pad.y - h.y) * Math.min(1, 3 * dt);
+    h.z = Math.max(0, h.z - dt * 0.8); h.rot += dt * 40;
+    if (h.z <= 0) { h.state = 'landed'; onLanded(); }
+  } else if (h.state === 'takeoff') {
+    h.z = Math.min(1, h.z + dt * 0.9); h.rot += dt * 40;
+    if (h.z >= 1) h.state = 'fly';
+  } else {
+    h.rot += dt * (game.phase === 'loading' || game.phase === 'unloading' ? 14 : 14);
+  }
+  if (h.state === 'fly') h.z = 1;
+  if (h.state !== 'landed') { /* z gestito sopra */ } else h.z = 0;
+
+  // caricamento / scarico
+  if (game.phase === 'loading' || game.phase === 'unloading') {
+    game.anim += dt / 3.8;
+    if (game.anim >= 1) {
+      if (game.phase === 'loading') { game.phase = 'return'; game.anim = 0; toast('Paziente a bordo! Riportalo in ospedale 🏥', 4); }
+      else { endGame(true); }
+    }
+  }
+
+  // traffico
+  for (const c of world.cars) {
+    if (c.stop > 0) { c.stop -= dt; continue; }
+    if (c.horiz) { c.x += c.dir * c.speed * dt; if (c.x > W + 30) c.x = -30; if (c.x < -30) c.x = W + 30; }
+    else { c.y += c.dir * c.speed * dt; if (c.y > W + 30) c.y = -30; if (c.y < -30) c.y = W + 30; }
+  }
+  // pedoni
+  for (const p of world.peds) {
+    if (p.hit > 0) p.hit -= dt;
+    if (p.scared > 0) { p.scared -= dt; continue; }
+    if (p.wait > 0) { p.wait -= dt; continue; }
+    const len = Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1]);
+    p.p += p.dir * p.speed * dt / len;
+    if (p.p >= 1) { p.p = 1; p.dir = -1; p.wait = p.pause ? rand(0.5, 2.5) : 0; }
+    if (p.p <= 0) { p.p = 0; p.dir = 1; p.wait = p.pause ? rand(0.5, 2.5) : 0; }
+  }
+
+  // camera
+  const lead = 0.35;
+  const tx = heli.x + heli.vx * lead, ty = heli.y + heli.vy * lead;
+  cam.x += (tx - cam.x) * Math.min(1, 4 * dt); cam.y += (ty - cam.y) * Math.min(1, 4 * dt);
+}
+
+function onLanded() {
+  if (game.phase === 'toPatient' && heli.pad === world.accident.pad) {
+    game.phase = 'loading'; game.anim = 0; toast('I soccorritori stanno caricando il paziente…', 3.5);
+  } else if (game.phase === 'return' && heli.pad === world.hospital.pad) {
+    game.phase = 'unloading'; game.anim = 0; toast('Il paziente viene portato al pronto soccorso…', 3.5);
+  } else if (game.phase === 'toPatient') toast('Questo è l\'ospedale: vai dove c\'è l\'incidente!');
+  else if (game.phase === 'return') toast('Il paziente deve andare in ospedale!');
+}
+
+function collide() {
+  const h = heli;
+  for (const b of world.buildings) {
+    if (h.x < b.x - 60 || h.x > b.x + b.w + 60 || h.y < b.y - 60 || h.y > b.y + b.h + 60) continue;
+    const c = circleRect(h.x, h.y, HR, b);
+    if (c) damage(c.nx, c.ny, c.pen, 4, 'Edificio');
+  }
+  for (const t of world.trees) {
+    const dx = h.x - t.x, dy = h.y - t.y, rr = HR + t.r * 0.8;
+    if (Math.abs(dx) > rr || Math.abs(dy) > rr) continue;
+    const d = Math.hypot(dx, dy);
+    if (d < rr) { const n = d || 1; damage(dx / n, dy / n, rr - d, 2, 'Albero'); }
+  }
+  for (const c of world.cars) {
+    const dx = h.x - c.x, dy = h.y - c.y, rr = HR + 14;
+    if (Math.abs(dx) > rr || Math.abs(dy) > rr) continue;
+    const d = Math.hypot(dx, dy);
+    if (d < rr) { const n = d || 1; damage(dx / n, dy / n, rr - d, 3, 'Auto'); c.stop = 2.5; }
+  }
+  for (const p of world.peds) {
+    if (p.scared > 0 || p.hit > 0) continue;
+    const px = p.a[0] + (p.b[0] - p.a[0]) * p.p, py = p.a[1] + (p.b[1] - p.a[1]) * p.p;
+    if (Math.hypot(h.x - px, h.y - py) < HR + 4) {
+      p.scared = 3; p.hit = 6; game.strikes++;
+      toast(`Attento ai pedoni! (${game.strikes}/3)`, 2);
+      if (game.strikes >= 3) endGame(false, 'Hai spaventato troppi pedoni 😱');
+    }
+  }
+}
+
+// ---------- rendering ----------
+function pedPos(p) { return [p.a[0] + (p.b[0] - p.a[0]) * p.p, p.a[1] + (p.b[1] - p.a[1]) * p.p]; }
+
+function drawWorld() {
+  const vx0 = cam.x - vw / zoom / 2 - 80, vx1 = cam.x + vw / zoom / 2 + 80;
+  const vy0 = cam.y - vh / zoom / 2 - 80, vy1 = cam.y + vh / zoom / 2 + 80;
+  const vis = (x, y, w, h) => x + w > vx0 && x < vx1 && y + h > vy0 && y < vy1;
+
+  // strade
+  ctx.fillStyle = '#454a52'; ctx.fillRect(0, 0, W, W);
+  ctx.strokeStyle = '#e8e8e8'; ctx.lineWidth = 3; ctx.setLineDash([26, 22]);
+  for (const b of world.blocks) {
+    if (!vis(b.bx - 130, b.by - 130, BLK + 260, BLK + 260)) continue;
+    ctx.beginPath(); ctx.moveTo(b.bx, b.by - ROAD / 2); ctx.lineTo(b.bx + BLK, b.by - ROAD / 2);
+    ctx.moveTo(b.bx - ROAD / 2, b.by); ctx.lineTo(b.bx - ROAD / 2, b.by + BLK);
+    if (b.j === N - 1) { ctx.moveTo(b.bx, b.by + BLK + ROAD / 2); ctx.lineTo(b.bx + BLK, b.by + BLK + ROAD / 2); }
+    if (b.i === N - 1) { ctx.moveTo(b.bx + BLK + ROAD / 2, b.by); ctx.lineTo(b.bx + BLK + ROAD / 2, b.by + BLK); }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // isolati
+  for (const b of world.blocks) {
+    if (!vis(b.bx - 10, b.by - 10, BLK + 20, BLK + 20)) continue;
+    ctx.fillStyle = '#c9c9c2'; ctx.fillRect(b.bx - 10, b.by - 10, BLK + 20, BLK + 20);
+    ctx.fillStyle = b.type === 'park' || b.type === 'accident' && false ? '#79b35a' : (b.type === 'hospital' || b.type === 'accident') ? '#a4a9ae' : b.type === 'park' ? '#79b35a' : '#a8c48a';
+    ctx.fillRect(b.bx, b.by, BLK, BLK);
+    if (b.type === 'park') { ctx.fillStyle = '#7fbb5f'; ctx.fillRect(b.bx, b.by, BLK, BLK); }
+  }
+  // eliporti
+  const phase = game.phase;
+  drawPad(world.hospital.pad, '#c0392b', phase === 'return');
+  drawPad(world.accident.pad, '#d4a017', phase === 'toPatient');
+  // coni e relitto
+  for (const c of world.cones) { ctx.fillStyle = '#e8651a'; ctx.beginPath(); ctx.arc(c.x, c.y, 6, 0, 7); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(c.x, c.y, 3, 0, 7); ctx.fill(); }
+  const wr = world.wreck;
+  ctx.save(); ctx.translate(wr.x, wr.y); ctx.rotate(wr.a); drawCarShape('#8a8f94', false); ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(-6, -9, 14, 18); ctx.restore();
+  ctx.fillStyle = 'rgba(40,40,40,.4)'; ctx.beginPath(); ctx.ellipse(wr.x + 6, wr.y - 4, 34, 22, 0.4, 0, 7); ctx.fill();
+
+  // ombre edifici + edifici
+  for (const b of world.buildings) {
+    if (!vis(b.x, b.y, b.w + 20, b.h + 20)) continue;
+    ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(b.x + 12, b.y + 14, b.w, b.h);
+  }
+  for (const b of world.buildings) {
+    if (!vis(b.x, b.y, b.w, b.h)) continue;
+    ctx.fillStyle = b.color; ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 3; ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = b.roof || shade(b.color, -18); ctx.fillRect(b.x + 10, b.y + 10, b.w - 20, b.h - 20);
+    if (b.ac) { ctx.fillStyle = '#8c949b'; ctx.fillRect(b.x + 22, b.y + 22, 28, 22); ctx.fillStyle = '#6f777d'; ctx.beginPath(); ctx.arc(b.x + 36, b.y + 33, 7, 0, 7); ctx.fill(); }
+    if (b.hospital) {
+      ctx.fillStyle = '#d63a3a'; const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      ctx.fillRect(cx - 14, cy - 50, 28, 100); ctx.fillRect(cx - 50, cy - 14, 100, 28);
+      ctx.fillStyle = '#7aa7d6'; ctx.fillRect(b.x + b.w / 2 - 30, b.y + b.h - 10, 60, 8);
+    }
+  }
+  // paziente / soccorritori
+  drawRescue();
+  // auto
+  for (const c of world.cars) {
+    if (!vis(c.x - 40, c.y - 40, 80, 80)) continue;
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.horiz ? (c.dir > 0 ? 0 : Math.PI) : (c.dir > 0 ? Math.PI / 2 : -Math.PI / 2));
+    drawCarShape(c.color, c.truck); ctx.restore();
+  }
+  // pedoni
+  for (const p of world.peds) {
+    const [x, y] = pedPos(p); if (!vis(x - 10, y - 10, 20, 20)) continue;
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x + 2, y + 2, 6, 4, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = p.scared > 0 ? '#ff3b3b' : p.color; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill();
+    ctx.fillStyle = '#f2c9a0'; ctx.beginPath(); ctx.arc(x, y, 3.2, 0, 7); ctx.fill();
+    if (p.scared > 0) { ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('!', x, y - 12); }
+  }
+  // alberi
+  for (const t of world.trees) {
+    if (!vis(t.x - 40, t.y - 40, 80, 80)) continue;
+    ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.arc(t.x + 8, t.y + 10, t.r, 0, 7); ctx.fill();
+    ctx.fillStyle = '#2f7d32'; ctx.beginPath(); ctx.arc(t.x, t.y, t.r, 0, 7); ctx.fill();
+    ctx.fillStyle = '#3f9a43'; ctx.beginPath(); ctx.arc(t.x - t.r * 0.25, t.y - t.r * 0.25, t.r * 0.62, 0, 7); ctx.fill();
+    ctx.fillStyle = '#58b65c'; ctx.beginPath(); ctx.arc(t.x - t.r * 0.35, t.y - t.r * 0.35, t.r * 0.25, 0, 7); ctx.fill();
+  }
+}
+
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = clamp((n >> 16) + amt, 0, 255), g = clamp(((n >> 8) & 255) + amt, 0, 255), b = clamp((n & 255) + amt, 0, 255);
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawCarShape(color, truck) {
+  const L = truck ? 52 : 40, Wd = 20;
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(-L / 2 + 3, -Wd / 2 + 4, L, Wd);
+  ctx.fillStyle = color; ctx.fillRect(-L / 2, -Wd / 2, L, Wd);
+  ctx.fillStyle = 'rgba(30,40,55,.85)';
+  if (truck) { ctx.fillRect(L / 2 - 14, -Wd / 2 + 2, 9, Wd - 4); ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(-L / 2 + 3, -Wd / 2 + 3, L - 22, Wd - 6); }
+  else { ctx.fillRect(L / 2 - 17, -Wd / 2 + 2, 8, Wd - 4); ctx.fillRect(-L / 2 + 6, -Wd / 2 + 2, 5, Wd - 4); }
+  ctx.fillStyle = '#fff3a0'; ctx.fillRect(L / 2 - 2, -Wd / 2 + 2, 2, 4); ctx.fillRect(L / 2 - 2, Wd / 2 - 6, 2, 4);
+}
+
+function drawPad(p, col, active) {
+  ctx.fillStyle = '#5a6068'; ctx.beginPath(); ctx.arc(p.x, p.y, PADR, 0, 7); ctx.fill();
+  ctx.strokeStyle = col; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(p.x, p.y, PADR - 5, 0, 7); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 62px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('H', p.x, p.y + 3);
+  if (active) {
+    const pulse = 0.5 + 0.5 * Math.sin(tAnim * 5);
+    ctx.strokeStyle = `rgba(255,230,80,${0.4 + 0.5 * pulse})`; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(p.x, p.y, PADR + 8 + pulse * 8, 0, 7); ctx.stroke();
+  }
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawPerson(x, y, col) {
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x + 2, y + 2, 7, 5, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill();
+  ctx.fillStyle = '#f2c9a0'; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fill();
+}
+function drawStretcher(x, y, a) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(-14, -7, 36, 16);
+  ctx.fillStyle = '#e8eef3'; ctx.fillRect(-16, -8, 34, 16);
+  ctx.fillStyle = '#4a90d9'; ctx.fillRect(-14, -6, 22, 12);
+  ctx.fillStyle = '#f2c9a0'; ctx.beginPath(); ctx.arc(12, 0, 4.5, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function drawRescue() {
+  const ac = world.accident, hs = world.hospital;
+  if (game.phase === 'toPatient') {
+    drawStretcher(ac.patient.x, ac.patient.y, 0.3);
+    drawPerson(ac.patient.x - 6, ac.patient.y - 22, '#ff8a1f'); drawPerson(ac.patient.x + 8, ac.patient.y + 22, '#ff8a1f');
+  } else if (game.phase === 'loading' || game.phase === 'unloading') {
+    let A, B;
+    if (game.phase === 'loading') { A = ac.patient; B = ac.pad; } else { A = hs.pad; B = hs.door; }
+    const t = clamp(game.anim, 0, 1);
+    if (game.phase === 'loading' && t >= 1) return;
+    const x = A.x + (B.x - A.x) * t, y = A.y + (B.y - A.y) * t;
+    const a = Math.atan2(B.y - A.y, B.x - A.x);
+    if (game.phase === 'loading' && t > 0.85) return; // sale a bordo
+    drawStretcher(x, y, a);
+    const nx = -Math.sin(a) * 20, ny = Math.cos(a) * 20;
+    drawPerson(x + nx, y + ny, '#ff8a1f'); drawPerson(x - nx, y - ny, '#ff8a1f');
+  }
+}
+
+function drawHeli() {
+  const h = heli, s = 1 + 0.22 * h.z;
+  // ombra
+  ctx.save(); ctx.translate(h.x + 6 + h.z * 16, h.y + 8 + h.z * 20); ctx.rotate(h.a); ctx.scale(s * 0.95, s * 0.95);
+  ctx.fillStyle = `rgba(0,0,0,${0.32 - 0.12 * h.z})`;
+  ctx.beginPath(); ctx.ellipse(0, 0, 12, 21, 0, 0, 7); ctx.fill(); ctx.fillRect(-2.5, 14, 5, 32);
+  ctx.beginPath(); ctx.arc(0, 0, 40, 0, 7); ctx.globalAlpha = 0.5; ctx.fill(); ctx.restore();
+
+  ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(h.a); ctx.scale(s, s);
+  // pattini
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-13, -18); ctx.lineTo(-13, 16); ctx.moveTo(13, -18); ctx.lineTo(13, 16);
+  ctx.moveTo(-13, -8); ctx.lineTo(13, -8); ctx.moveTo(-13, 8); ctx.lineTo(13, 8); ctx.stroke();
+  // coda
+  ctx.fillStyle = '#e9edf0'; ctx.fillRect(-2.8, 14, 5.6, 32);
+  ctx.fillStyle = '#d63a3a'; ctx.fillRect(-2.8, 24, 5.6, 6);
+  ctx.fillStyle = '#e9edf0'; ctx.beginPath(); ctx.moveTo(-1, 40); ctx.lineTo(-9, 49); ctx.lineTo(1, 48); ctx.fill();
+  // rotore di coda
+  ctx.save(); ctx.translate(4, 46); ctx.rotate(h.rot * 1.3); ctx.fillStyle = 'rgba(60,60,60,.6)'; ctx.fillRect(-8, -1, 16, 2); ctx.fillRect(-1, -8, 2, 16); ctx.restore();
+  // corpo
+  ctx.fillStyle = '#f4f6f8'; ctx.beginPath(); ctx.ellipse(0, 0, 12, 21, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#d63a3a'; ctx.fillRect(-12, 2, 24, 7);
+  ctx.fillStyle = '#3a6ea5'; ctx.beginPath(); ctx.ellipse(0, -12, 8, 9, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.beginPath(); ctx.ellipse(-2.5, -15, 3, 4, 0, 0, 7); ctx.fill();
+  // croce
+  ctx.fillStyle = '#fff'; ctx.fillRect(-1.6, 3.2, 3.2, 4.6); ctx.fillRect(-3, 4.5, 6, 2);
+  // sirena
+  const on = Math.floor(tAnim * 4) % 2;
+  ctx.fillStyle = on ? '#ff3030' : '#3070ff'; ctx.beginPath(); ctx.arc(0, 11, 3, 0, 7); ctx.fill();
+  // rotore principale
+  ctx.fillStyle = 'rgba(200,210,220,.14)'; ctx.beginPath(); ctx.arc(0, 0, 42, 0, 7); ctx.fill();
+  ctx.save(); ctx.rotate(h.rot);
+  ctx.fillStyle = 'rgba(40,45,50,.65)';
+  for (let k = 0; k < 4; k++) { ctx.rotate(Math.PI / 2); ctx.fillRect(2, -2, 40, 4); }
+  ctx.restore();
+  ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill();
+  ctx.restore();
+
+  if (h.flash > 0) { }
+  // lampeggio danno
+  if (h.inv > 0 && Math.floor(h.inv * 14) % 2) { ctx.save(); ctx.strokeStyle = 'rgba(255,60,60,.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(h.x, h.y, 34, 0, 7); ctx.stroke(); ctx.restore(); }
+}
+
+function drawGuide() {
+  if (heli.state === 'landed' && game.phase !== 'toPatient' && game.phase !== 'return') return;
+  const target = game.phase === 'return' || game.phase === 'unloading' ? world.hospital.pad : world.accident.pad;
+  const dx = target.x - heli.x, dy = target.y - heli.y, d = Math.hypot(dx, dy);
+  if (d < 140) return;
+  const a = Math.atan2(dy, dx);
+  ctx.save(); ctx.translate(heli.x + Math.cos(a) * 78, heli.y + Math.sin(a) * 78); ctx.rotate(a);
+  ctx.fillStyle = 'rgba(255,225,80,.95)'; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-8, -11); ctx.lineTo(-3, 0); ctx.lineTo(-8, 11); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+function drawHUD() {
+  const pad = 12;
+  ctx.textBaseline = 'alphabetic';
+  // pannello alto-sinistra
+  ctx.fillStyle = 'rgba(8,18,32,.62)'; roundRect(pad, pad, 240, 114, 10); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText(`🚑 Livello ${level}   ⭐ ${totalScore}`, pad + 12, pad + 22);
+  bar(pad + 12, pad + 34, 216, 12, heli.hull / 100, heli.hull > 50 ? '#4cd964' : heli.hull > 25 ? '#ffcc00' : '#ff3b30', '🔧 Elicottero');
+  const pf = game.time / game.timeMax;
+  bar(pad + 12, pad + 70, 216, 12, pf, pf > 0.5 ? '#4aa8ff' : pf > 0.25 ? '#ffcc00' : '#ff3b30', '❤️ Paziente · ' + Math.ceil(game.time) + 's');
+  ctx.fillStyle = '#fff'; ctx.font = '12px sans-serif';
+  ctx.fillText(`👥 Pedoni spaventati: ${game.strikes}/3`, pad + 12, pad + 104);
+
+  // obiettivo
+  const obj = { toPatient: '🎯 Vola all\'incidente e atterra sulla H gialla', loading: '🧑‍⚕️ Caricamento paziente…', return: '🏥 Porta il paziente all\'ospedale (H rossa)', unloading: '🧑‍⚕️ Consegna al pronto soccorso…' }[game.phase];
+  ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
+  const tw = ctx.measureText(obj).width + 28;
+  ctx.fillStyle = 'rgba(8,18,32,.62)'; roundRect(vw / 2 - tw / 2, pad, tw, 32, 16); ctx.fill();
+  ctx.fillStyle = '#ffd166'; ctx.fillText(obj, vw / 2, pad + 21);
+
+  // toast
+  if (toastT > 0) {
+    ctx.font = 'bold 17px sans-serif';
+    const w2 = ctx.measureText(toastMsg).width + 34;
+    ctx.globalAlpha = Math.min(1, toastT * 2);
+    ctx.fillStyle = 'rgba(0,0,0,.72)'; roundRect(vw / 2 - w2 / 2, 58, w2, 36, 18); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(toastMsg, vw / 2, 82); ctx.globalAlpha = 1;
+  }
+
+  // suggerimento atterraggio
+  if (heli.state === 'fly') {
+    const near = [world.hospital.pad, world.accident.pad].find(nearPad);
+    if (near) {
+      const sp = Math.hypot(heli.vx, heli.vy), ok = sp <= 90;
+      const msg = ok ? 'SPAZIO per atterrare' : 'Rallenta per atterrare… (' + Math.round(sp) + ')';
+      ctx.font = 'bold 18px sans-serif'; ctx.fillStyle = ok ? '#7dff9a' : '#ffb347';
+      ctx.fillText(msg, vw / 2, vh - 120);
+    }
+  } else if (heli.state === 'landed' && game.phase !== 'loading' && game.phase !== 'unloading') {
+    ctx.font = 'bold 18px sans-serif'; ctx.fillStyle = '#7dff9a'; ctx.textAlign = 'center';
+    ctx.fillText('SPAZIO per decollare', vw / 2, vh - 120);
+  }
+  // velocità
+  ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = '12px sans-serif';
+  ctx.fillText(`Velocità ${Math.round(Math.hypot(heli.vx, heli.vy) / 3)} km/h`, pad, vh - 14 - (document.body.classList.contains('touch') ? 90 : 0));
+
+  // minimappa
+  const ms = 150, mx = vw - ms - pad, my = pad, k = ms / W;
+  ctx.fillStyle = 'rgba(8,18,32,.7)'; roundRect(mx - 4, my - 4, ms + 8, ms + 8, 8); ctx.fill();
+  ctx.drawImage(world.mini, mx, my, ms, ms);
+  const dot = (p, c, r) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(mx + p.x * k, my + p.y * k, r, 0, 7); ctx.fill(); };
+  dot(world.hospital.pad, '#ff3b30', 4); dot(world.accident.pad, '#ffd60a', 4);
+  ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1;
+  ctx.strokeRect(mx + (cam.x - vw / zoom / 2) * k, my + (cam.y - vh / zoom / 2) * k, vw / zoom * k, vh / zoom * k);
+  dot(heli, '#fff', 3.5);
+}
+function bar(x, y, w, h, f, col, label) {
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; roundRect(x, y, w, h, 6); ctx.fill();
+  ctx.fillStyle = col; roundRect(x, y, Math.max(h, w * clamp(f, 0, 1)), h, 6); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.fillText(label, x, y + h + 11);
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+function render() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#1b2a3a'; ctx.fillRect(0, 0, vw, vh);
+  if (!world) return;
+  ctx.save();
+  ctx.translate(vw / 2, vh / 2); ctx.scale(zoom, zoom);
+  let sx = 0, sy = 0; if (shake > 0) { sx = rand(-5, 5) * shake * 2; sy = rand(-5, 5) * shake * 2; }
+  ctx.translate(-cam.x + sx, -cam.y + sy);
+  drawWorld(); drawGuide(); drawHeli();
+  ctx.restore();
+  drawHUD();
+}
+
+// ---------- ciclo ----------
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  vw = innerWidth; vh = innerHeight;
+  cv.width = vw * dpr; cv.height = vh * dpr;
+  zoom = clamp(Math.min(vw, vh) / 620, 0.62, 1.3);
+}
+addEventListener('resize', resize); resize();
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (world) { update(dt); render(); } else tAnim += dt;
+  requestAnimationFrame(loop);
+}
+// sfondo del menu: livello dimostrativo
+world = buildLevel(1);
+heli = { x: world.hospital.pad.x, y: world.hospital.pad.y, vx: 0, vy: 0, a: 0, z: 0, state: 'landed', rot: 0, hull: 100, inv: 0 };
+game = { phase: 'toPatient', time: 60, timeMax: 60, t: 0, anim: 0, strikes: 0, score: 0, hits: 0 };
+cam.x = heli.x; cam.y = heli.y;
+showMenu();
+requestAnimationFrame(loop);
+
+// hook per test
+window.__game = { get state() { return { mode, heli, game, world, level }; }, keys, action };
+})();
+</script>
+</body>
+</html>
