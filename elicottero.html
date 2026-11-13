@@ -62,7 +62,7 @@ if (typeof THREE === 'undefined') {
 
 // ---------- costanti ----------
 const N = 7, CELL = 600, ROAD = 130, BLK = 470, W = N * CELL + ROAD;
-const PADR = 58, HR = 30, GROUND_Y = 14, CEIL = 115;
+const PADR = 58, HR = 30, GROUND_Y = 14, CEIL = 1500;
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -77,11 +77,17 @@ const keys = { left: false, right: false, up: false, down: false, climb: false, 
 const keymap = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
   ShiftLeft: 'climb', ShiftRight: 'climb', KeyR: 'climb', KeyE: 'climb', ControlLeft: 'descend', ControlRight: 'descend', KeyF: 'descend', KeyQ: 'descend' };
 addEventListener('keydown', e => {
-  if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); if (!e.repeat) action(); return; }
+  if (e.code === 'Enter' || e.code === 'KeyL') { e.preventDefault(); if (!e.repeat) action(); return; }
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (mode === 'pause') { if (!e.repeat) togglePause(); return; }
+    if (mode === 'play') { keys.climb = true; if (!e.repeat && heli.state === 'landed') action(); }
+    return;
+  }
   if (e.code === 'KeyP' || e.code === 'Escape') { if (!e.repeat) togglePause(); return; }
   const k = keymap[e.code]; if (k) { keys[k] = true; e.preventDefault(); }
 });
-addEventListener('keyup', e => { const k = keymap[e.code]; if (k) keys[k] = false; });
+addEventListener('keyup', e => { if (e.code === 'Space') keys.climb = false; const k = keymap[e.code]; if (k) keys[k] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 document.querySelectorAll('.tb').forEach(b => {
   const k = b.dataset.k;
@@ -504,8 +510,8 @@ function showMenu() {
   showPanel(`<h1>🚁 Eli-Soccorso 3D</h1><p>Pilota l'elicottero dell'ambulanza sopra la città: raggiungi l'incidente, atterra, carica il paziente e riportalo in ospedale!</p>
     <div class="modes"><div class="mode on"><span class="e">🚑</span>Ambulanza</div><div class="mode off"><span class="e">🚓</span>Polizia<br><small>presto</small></div><div class="mode off"><span class="e">🪖</span>Militare<br><small>presto</small></div></div>
     <div class="keys"><kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> gira · <kbd>↑</kbd> / <kbd>W</kbd> avanti · <kbd>↓</kbd> / <kbd>S</kbd> frena<br>
-    <kbd>Shift</kbd> / <kbd>E</kbd> sali · <kbd>Ctrl</kbd> / <kbd>Q</kbd> scendi · <kbd>SPAZIO</kbd> atterra / decolla · <kbd>P</kbd> pausa<br>
-    ⏱️ 50 secondi per arrivare, 50 per tornare. Sali per scavalcare le case basse, ma i grattacieli no! Vola alto per evitare auto e pedoni, scendi piano per atterrare sulla H.</div>
+    <kbd>SPAZIO</kbd> tieni premuto per salire (quanto vuoi!) · <kbd>Ctrl</kbd> / <kbd>Q</kbd> scendi<br><kbd>L</kbd> atterra (sulla H) · <kbd>SPAZIO</kbd> decolla · <kbd>P</kbd> pausa<br>
+    ⏱️ 50 secondi per arrivare, 50 per tornare. Sali con SPAZIO fin sopra i grattacieli (nessun limite!) o vola basso tra le case; ma attenzione ad auto e pedoni a terra. Per atterrare, mettiti sulla H, rallenta e premi L.</div>
     <button class="big" id="bStart">Inizia la missione</button><br><a class="back" href="index.html">← Torna ai giochi</a>`);
   document.getElementById('bStart').onclick = () => { totalScore = 0; startLevel(1); };
 }
@@ -541,7 +547,7 @@ function update(dt) {
   } else if (h.state === 'landing') {
     h.vx *= Math.exp(-4 * dt); h.vz *= Math.exp(-4 * dt); h.yawRate = 0;
     h.x += (h.pad.x - h.x) * Math.min(1, 3 * dt); h.z += (h.pad.y - h.z) * Math.min(1, 3 * dt);
-    h.y = Math.max(GROUND_Y, h.y - 45 * dt); h.vy = 0; h.rotS += dt * 40;
+    h.y = Math.max(GROUND_Y, h.y - Math.max(45, (h.y - GROUND_Y) * 0.8) * dt); h.vy = 0; h.rotS += dt * 40;
     if (h.y <= GROUND_Y) { h.state = 'landed'; onLanded(); }
   } else if (h.state === 'takeoff') {
     h.y += 45 * dt; h.rotS += dt * 40; h.yawRate = 0;
@@ -687,7 +693,7 @@ function drawHUD() {
   ctx.textAlign = 'center'; ctx.font = 'bold 18px sans-serif';
   if (h.state === 'fly') {
     const near = [world.hospital.pad, world.accident.pad].find(nearPad);
-    if (near) { const ok = sp <= 90; ctx.fillStyle = ok ? '#7dff9a' : '#ffb347'; ctx.fillText(ok ? 'SPAZIO per atterrare' : 'Rallenta per atterrare… (' + Math.round(sp) + ')', vw / 2, vh - 130); }
+    if (near) { const ok = sp <= 90; ctx.fillStyle = ok ? '#7dff9a' : '#ffb347'; ctx.fillText(ok ? 'Premi L per atterrare' : 'Rallenta per atterrare… (' + Math.round(sp) + ')', vw / 2, vh - 130); }
   } else if (h.state === 'landed' && game.phase !== 'loading' && game.phase !== 'unloading') { ctx.fillStyle = '#7dff9a'; ctx.fillText('SPAZIO per decollare', vw / 2, vh - 130); }
 
   // strumenti
