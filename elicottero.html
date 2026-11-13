@@ -123,7 +123,7 @@ function buildLevel(lv) {
     hi = Math.floor(Math.random() * N); hj = Math.floor(Math.random() * N);
     ai = Math.floor(Math.random() * N); aj = Math.floor(Math.random() * N);
     tries++;
-  } while (Math.max(Math.abs(hi - ai), Math.abs(hj - aj)) < Math.min(3, 2 + (lv > 2 ? 1 : 0)) && tries < 200);
+  } while ((() => { const d = Math.max(Math.abs(hi - ai), Math.abs(hj - aj)); return (d < 2 || d > 3); })() && tries < 300);
 
   const palette = ['#c9b79c', '#b0a6a0', '#d4a373', '#9aa5b1', '#c08a7a', '#a7b8a0', '#b9c4d0'];
   for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
@@ -223,7 +223,7 @@ function startLevel(lv) {
   world = buildLevel(lv);
   const hp = world.hospital.pad;
   heli = { x: hp.x, y: hp.y, vx: 0, vy: 0, a: 0, z: 0, state: 'landed', rot: 0, hull: 100, inv: 0, flash: 0 };
-  const tl = Math.max(45, Math.round(world.dist / 150 * 2 + 36 - (lv - 1) * 4));
+  const tl = 60; // il paziente resiste un minuto
   game = { phase: 'toPatient', time: tl, timeMax: tl, t: 0, anim: 0, strikes: 0, score: 0, hits: 0 };
   cam.x = heli.x; cam.y = heli.y;
   mode = 'play';
