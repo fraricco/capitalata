@@ -408,6 +408,7 @@ let bordDirty = true; const pdEls = {};
 function reorderPaths() {   // per proprietario: prima i contorni scuri, poi i colori col bordo uguale al riempimento: i confini interni spariscono
   bordDirty = false; const g = {}; for (const id of IDS) (g[C(id).owner] = g[C(id).owner] || []).push(id);
   for (const o in g) { for (const id of g[o]) gC.appendChild(pdEls[id]); for (const id of g[o]) gC.appendChild(paths[id]); }
+  renderLabels();
 }
 function paintOne(id) { const p = paths[id], c = C(id); if (!p) return; const col = F(c.owner).color; p.setAttribute('fill', col); p.setAttribute('stroke', col); p.classList.toggle('sel', G.selC === id); if (!G.selOnly) bordDirty = true; }
 function paintMap() { for (const id of IDS) paintOne(id); }
@@ -416,7 +417,7 @@ function applyView() { CAM.setAttribute('transform', `translate(${view.x},${view
 function clampView() { view.k = clamp(view.k, 1, 14); const r = SVG.getBoundingClientRect(), offx = (r.width / scaleBase - W) / 2, offy = (r.height / scaleBase - H) / 2; view.x = clamp(view.x, W - W * view.k - offx - 30, -offx * 0 + 30 + offx); view.y = clamp(view.y, H - H * view.k - offy - 30, 30 + offy); }
 function renderLabels() {
   const lim = 14 + Math.pow(view.k, 1.7) * 14, fs = clamp(7.2 / Math.pow(view.k, 0.82), 1.6, 8);
-  for (const id in lblEls) { const t = lblEls[id], show = +t.dataset.rank < lim; t.style.display = show ? '' : 'none'; if (show) { t.setAttribute('font-size', fs); t.setAttribute('stroke-width', fs * 0.28); } }
+  for (const id in lblEls) { const t = lblEls[id], show = +t.dataset.rank < lim && C(id).owner === id; t.style.display = show ? '' : 'none'; if (show) { t.setAttribute('font-size', fs); t.setAttribute('stroke-width', fs * 0.28); } }
   renderArmate();
 }
 function zoomAt(cx, cy, f) { const r = SVG.getBoundingClientRect(), px = (cx - r.left) / scaleBase - (r.width / scaleBase - W) / 2, py = (cy - r.top) / scaleBase - (r.height / scaleBase - H) / 2, nk = clamp(view.k * f, 1, 14), s = nk / view.k; view.x = px - (px - view.x) * s; view.y = py - (py - view.y) * s; view.k = nk; clampView(); applyView(); }
