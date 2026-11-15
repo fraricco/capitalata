@@ -199,7 +199,7 @@ function startGame(pid, diff) {
   const D = DIFFS[diff];
   M.c.forEach((c, i) => {
     const rc = { id: c.id, n: c.n, k: c.k, pop: c.pop, gdp: c.gdp, gdp0: c.gdp, lx: c.lx, ly: c.ly, nb: c.nb, owner: c.id, unrest: 0, occ: null, man: 0, maxMan: c.pop * 1e6 * MAN_FRAC, garr: 0 };
-    rc.occList = []; rc.cnt = {}; rc.man = rc.maxMan * 0.7; rc.garr = maxGarr(rc) * 0.8; G.C[c.id] = rc;
+    rc.occList = []; rc.cnt = {}; rc.fr = {}; rc.man = rc.maxMan * 0.7; rc.garr = maxGarr(rc) * 0.8; G.C[c.id] = rc;
     G.F[c.id] = { id: c.id, name: c.n, color: palette(i), cap: c.id, money: 0, queue: [], war: {}, rel: {}, tr: {}, aiT: rnd() * 4, alive: true, pace: -99 };
   });
   G.F[pid].color = '#ffb347'; G.ownDirty = true; OCC.fill(-1); occDirty = true; G.ask = null;
@@ -277,19 +277,41 @@ function tickScontri(dtM) {
   for (let i = G.arm.length - 1; i >= 0; i--) { const a = G.arm[i]; if (a.n < MIN_ARM) { if (a.owner === G.me) log(`Un'armata nostra è stata annientata${a.cid ? ' in ' + C(a.cid).n : ''}.`, 'bad'); else if (a.cid && C(a.cid).owner === G.me) log(`Abbiamo annientato un'armata di ${fName(a.owner)} in ${C(a.cid).n}.`, 'good'); eliminaArmata(a); } }
 }
 const SOGLIA_OCC = 0.55;   // quota del territorio da occupare per annettere il paese
-function liberaCelle(c) { const ci = IDX[c.id]; for (const idx of c.occList) OCC[idx] = -1; c.occList = []; c.cnt = {}; c.occ = null; occDirty = true; }
+function liberaCelle(c) { for (const idx of c.occList) OCC[idx] = -1; c.occList = []; c.cnt = {}; c.fr = {}; c.occ = null; occDirty = true; }
+function occupaCella(c, fid, idx, fr) { OCC[idx] = IDX[fid]; c.occList.push(idx); c.cnt[fid] = (c.cnt[fid] || 0) + 1; fr.q.push(idx); occDirty = true; }
+function semiConfine(c, ci, fid, a, fr) {   // celle del paese che toccano un territorio del invasore, vicino all'armata
+  const b = BB[ci], x0 = Math.max(0, Math.floor(Math.max(b[0], a.x - 70))), x1 = Math.min(GRW - 1, Math.ceil(Math.min(b[2], a.x + 70))), y0 = Math.max(0, Math.floor(Math.max(b[1], a.y - 70))), y1 = Math.min(GRH - 1, Math.ceil(Math.min(b[3], a.y + 70)));
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const idx = y * GRW + x; if (GRID[idx] !== ci || OCC[idx] >= 0) continue;
+    const nbs = [x > 0 ? idx - 1 : -1, x < GRW - 1 ? idx + 1 : -1, y > 0 ? idx - GRW : -1, y < GRH - 1 ? idx + GRW : -1];
+    for (const n of nbs) { if (n < 0) continue; const g = GRID[n]; if (g >= 0 && g !== ci && C(IDS[g]).owner === fid) { occupaCella(c, fid, idx, fr); break; } }
+  }
+}
+function espandi(c, ci, fid, fr, budget) {   // l'occupazione si allarga in modo continuo, cella dopo cella, dal fronte
+  const q = fr.q; let n = 0;
+  while (n < budget && fr.h < q.length) {
+    const idx = q[fr.h++], x = idx % GRW, y = (idx / GRW) | 0;
+    const nbs = [x > 0 ? idx - 1 : -1, x < GRW - 1 ? idx + 1 : -1, y > 0 ? idx - GRW : -1, y < GRH - 1 ? idx + GRW : -1];
+    for (const ni of nbs) if (ni >= 0 && GRID[ni] === ci && OCC[ni] < 0) { occupaCella(c, fid, ni, fr); n++; }
+  }
+  if (fr.h > 4000) { q.splice(0, fr.h); fr.h = 0; }
+}
 function tickOccupazione(dtM) {
   for (const id of IDS) {
     const c = C(id), ci = IDX[id], dentro = G.arm.filter(a => a.cid === id), dif = dentro.filter(a => a.owner === c.owner).reduce((t, a) => t + a.n, 0);
-    const invA = dentro.filter(a => a.owner !== c.owner && inGuerra(a.owner, c.owner));
-    if (invA.length && dif <= 0 && c.garr < maxGarr(c) * 0.12 + 150) {
-      // invasione parziale: ogni armata occupa le zone intorno a dove si trova
-      for (const a of invA) {
-        const r = clamp(2.5 + Math.sqrt(a.n / 1000) * 0.9, 3, 14), rate = 150 * Math.min(1.6, a.n / resist(c)), k = rate * dtM * 2.2, m = Math.floor(k) + (rnd() < k % 1 ? 1 : 0), fi = IDX[a.owner];
-        for (let q = 0; q < m; q++) { const ang = rnd() * 6.2832, rr = r * Math.sqrt(rnd()), ix = Math.floor(a.x + Math.cos(ang) * rr), iy = Math.floor(a.y + Math.sin(ang) * rr); if (ix < 0 || iy < 0 || ix >= GRW || iy >= GRH) continue; const idx = iy * GRW + ix; if (GRID[idx] === ci && OCC[idx] < 0) { OCC[idx] = fi; c.occList.push(idx); c.cnt[a.owner] = (c.cnt[a.owner] || 0) + 1; occDirty = true; } }
+    const invA = dentro.filter(a => a.owner !== c.owner && inGuerra(a.owner, c.owner)), att = invA.reduce((t, a) => t + a.n, 0);
+    if (invA.length && dif <= att * 1.5) {
+      // invasione anche con difensori ancora in campo: parte dal confine e da dove si trova l'armata e avanza compatta
+      const per = {}; invA.forEach(a => (per[a.owner] = per[a.owner] || []).push(a));
+      for (const fid in per) {
+        const arms = per[fid].sort((x, y) => y.n - x.n), tot = arms.reduce((t, a) => t + a.n, 0), fr = c.fr[fid] = c.fr[fid] || { q: [], h: 0, init: false };
+        if (!fr.init) { fr.init = true; semiConfine(c, ci, fid, arms[0], fr); }
+        for (const a of arms) { const ix = Math.floor(a.x), iy = Math.floor(a.y); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = ix + dx, y = iy + dy; if (x < 0 || y < 0 || x >= GRW || y >= GRH) continue; const idx = y * GRW + x; if (GRID[idx] === ci && OCC[idx] < 0) occupaCella(c, fid, idx, fr); } }
+        const share = tot / (tot + (dif + c.garr) * 1.1 + 1), rate = 130 * Math.min(1.6, tot / resist(c)) * clamp(share * 1.8, 0.1, 1.2), k = rate * dtM, m = Math.floor(k) + (rnd() < k % 1 ? 1 : 0);
+        espandi(c, ci, fid, fr, m);
       }
-    } else if (c.occList.length && (!invA.length || dif > 0)) {   // senza occupanti (o con difensori) le zone tornano al legittimo proprietario
-      const m = Math.ceil(c.occList.length * 0.07 * dtM); for (let q = 0; q < m && c.occList.length; q++) { const idx = c.occList.pop(), o = OCC[idx]; OCC[idx] = -1; if (o >= 0) c.cnt[IDS[o]]--; occDirty = true; }
+    } else if (c.occList.length && (!invA.length || dif > att * 1.5)) {   // senza occupanti (o con difensori molto piu' forti) le zone tornano indietro
+      c.fr = {}; const m = Math.ceil(c.occList.length * 0.07 * dtM); for (let q = 0; q < m && c.occList.length; q++) { const idx = c.occList.pop(), o = OCC[idx]; OCC[idx] = -1; if (o >= 0) c.cnt[IDS[o]]--; occDirty = true; }
     }
     if (c.occList.length) {
       let top = null, tc = 0; for (const o in c.cnt) if (c.cnt[o] > tc) { tc = c.cnt[o]; top = o; }
@@ -368,8 +390,6 @@ function aiMuovi(id) {
     let tgt = null, bd = 1e9;
     for (const e of nem) for (const b of armiesOf(e)) { if (b.cid && C(b.cid).owner === id) { const d = Math.hypot(b.x - a.x, b.y - a.y); if (d < bd) { bd = d; tgt = b; } } }
     if (tgt && bd < 220) { ordina(a, tgt.x, tgt.y); continue; }
-    const cc = a.cid ? C(a.cid) : null;   // armata ferma in un paese nemico non ancora conquistato: si sposta nelle zone libere
-    if (cc && nem.includes(cc.owner) && CELLS[IDX[cc.id]] > 120) { const pl = puntoLibero(cc.id, a); if (pl) { ordina(a, pl.x, pl.y); continue; } }
     // attacco: il paese nemico piu' conveniente
     let best = null, bs = -1;
     for (const c of M.c) { const rc = C(c.id); if (!nem.includes(rc.owner)) continue; const d = Math.hypot(rc.lx - a.x, rc.ly - a.y), debol = (rc.garr + 1) / (a.n + 1), sc = 1 / (1 + d / 80) / (0.5 + debol); if (sc > bs && debol < 1.6) { bs = sc; best = rc; } }
