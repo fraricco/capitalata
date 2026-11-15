@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dominio Mondiale</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --bg1: #0b1a2a; --bg2: #16304f; --ocean: #0b1f33; --panel: rgba(255,255,255,0.07); --border: rgba(255,255,255,0.18); --gold: #ffb347; --text: #eef4fb; }
+  html, body { height: 100%; }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: linear-gradient(135deg, var(--bg1), var(--bg2)); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  button { font-family: inherit; cursor: pointer; border: none; border-radius: 8px; background: var(--gold); color: #10233a; font-weight: 700; padding: 9px 14px; font-size: 0.9rem; transition: filter .15s; }
+  button:hover:not(:disabled) { filter: brightness(1.1); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.ghost { background: rgba(255,255,255,0.1); color: var(--text); border: 1px solid var(--border); }
+  button.danger { background: #e05263; color: #fff; }
+  button.good { background: #4fb286; color: #07251a; }
+  button.small { padding: 5px 9px; font-size: 0.78rem; }
+  .topbar { display: flex; align-items: center; gap: 16px; padding: 8px 14px; background: rgba(0,0,0,0.3); border-bottom: 1px solid var(--border); flex-wrap: wrap; flex: 0 0 auto; }
+  .brand { font-weight: 800; font-size: 1.15rem; white-space: nowrap; } .brand span { color: var(--gold); }
+  .stats { display: flex; gap: 16px; flex: 1; flex-wrap: wrap; align-items: center; }
+  .stat { display: flex; flex-direction: column; line-height: 1.15; } .stat b { font-size: 0.98rem; } .stat i { font-style: normal; opacity: .6; font-size: .65rem; text-transform: uppercase; letter-spacing: .04em; }
+  .speed { display: flex; gap: 4px; } .speed button { padding: 6px 10px; min-width: 38px; font-size: .82rem; background: rgba(255,255,255,0.1); color: var(--text); border: 1px solid var(--border); } .speed button.on { background: var(--gold); color: #10233a; }
+  main { flex: 1; display: flex; min-height: 0; position: relative; }
+  .mapwrap { flex: 1; position: relative; /*mappa a tutto schermo*/ background: radial-gradient(ellipse at center, #123352 0%, var(--ocean) 100%); overflow: hidden; touch-action: none; }
+  svg#map { width: 100%; height: 100%; display: block; cursor: grab; user-select: none; }
+  svg#map.armata { cursor: crosshair; }
+  .side { position: absolute; right: 0; top: 0; bottom: 0; width: 340px; max-width: 94%; display: none; flex-direction: column; border-left: 1px solid var(--border); background: rgba(8,20,34,.95); z-index: 8; }
+  .side.open { display: flex; }
+  .side .scroll { flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
+  .log { position: absolute; left: 10px; bottom: 10px; width: min(380px, 70%); max-height: 130px; overflow: hidden; padding: 6px 10px; font-size: .76rem; line-height: 1.4; background: rgba(8,20,34,.72); border: 1px solid var(--border); border-radius: 8px; pointer-events: none; }
+  .log div { padding: 1px 0; opacity: .85; } .log .big { color: #ffd27d; font-weight: 700; opacity: 1; } .log .bad { color: #ff9d9d; opacity: 1; } .log .good { color: #86e6b4; opacity: 1; } .log .dip { color: #9fd4ff; }
+  .ask { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: rgba(8,20,34,.97); border: 1px solid var(--gold); border-radius: 12px; padding: 12px 14px; z-index: 9; max-width: 92%; width: 340px; font-size: .88rem; }
+  .abar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); align-items: center; gap: 8px; background: rgba(8,20,34,.95); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; z-index: 7; white-space: nowrap; }
+  .stat[data-ui] { cursor: pointer; padding: 4px 9px; border: 1px solid var(--border); border-radius: 8px; background: rgba(255,255,255,.06); } .stat[data-ui]:hover { background: rgba(255,255,255,.14); } .stat[data-ui].on { border-color: var(--gold); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .card h3 { font-size: 1rem; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; } .card h4 { font-size: .8rem; opacity: .75; margin: 8px 0 4px; text-transform: uppercase; letter-spacing: .04em; }
+  .row { display: flex; justify-content: space-between; font-size: .85rem; padding: 2px 0; } .row span:first-child { opacity: .7; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgba(255,255,255,.5); }
+  .bar { height: 8px; background: rgba(255,255,255,.12); border-radius: 5px; overflow: hidden; margin: 3px 0 6px; } .bar i { display: block; height: 100%; background: linear-gradient(90deg, #4fb286, #ffb347); }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: .72rem; font-weight: 700; } .tag.war { background: rgba(224,82,99,.3); color: #ff9d9d; } .tag.peace { background: rgba(110,231,168,.2); color: #86e6b4; } .tag.me { background: rgba(255,179,71,.25); color: #ffd27d; }
+  .hint { font-size: .78rem; opacity: .65; line-height: 1.4; }
+  .zoombox { position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 4px; } .zoombox button { width: 34px; height: 34px; padding: 0; font-size: 1.1rem; background: rgba(8,20,34,.85); color: var(--text); border: 1px solid var(--border); }
+  .tip { position: absolute; pointer-events: none; background: rgba(8,20,34,.95); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font-size: .78rem; opacity: 0; transition: opacity .1s; z-index: 5; line-height: 1.35; }
+  .toast { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); background: rgba(8,20,34,.95); border: 1px solid var(--border); color: #ffd27d; padding: 9px 15px; border-radius: 10px; font-size: .85rem; max-width: 82%; text-align: center; opacity: 0; transition: opacity .18s; pointer-events: none; z-index: 6; } .toast.on { opacity: 1; }
+  .overlay { position: fixed; inset: 0; background: rgba(4,10,18,.82); display: flex; align-items: center; justify-content: center; padding: 14px; z-index: 50; } .overlay.hidden { display: none; }
+  .modal { background: linear-gradient(135deg, #12304e, #0d2237); border: 1px solid var(--border); border-radius: 16px; padding: 24px; max-width: 640px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.55); max-height: 92vh; overflow-y: auto; }
+  .modal h2 { font-size: 1.8rem; margin-bottom: 8px; } .modal p { line-height: 1.55; margin-bottom: 10px; font-size: .93rem; } .modal ul { margin: 0 0 12px 18px; font-size: .88rem; line-height: 1.55; }
+  .pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); gap: 6px; max-height: 190px; overflow-y: auto; margin: 8px 0 12px; padding-right: 4px; }
+  .pick button { background: rgba(255,255,255,.08); color: var(--text); border: 1px solid var(--border); text-align: left; font-size: .8rem; padding: 6px 8px; } .pick button.sel { background: var(--gold); color: #10233a; }
+  .pick button small { display: block; opacity: .65; font-weight: 400; font-size: .68rem; }
+  .diffs { display: flex; gap: 8px; margin: 8px 0 14px; } .diffs button { flex: 1; background: rgba(255,255,255,.08); color: var(--text); border: 1px solid var(--border); } .diffs button.sel { background: var(--gold); color: #10233a; }
+  .path { stroke-width: .9; stroke-linejoin: round; cursor: pointer; } .path:hover { filter: brightness(1.22); } .path.sel { filter: brightness(1.4); }
+  .lbl { font-weight: 700; fill: rgba(255,255,255,.88); text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: rgba(0,0,0,.6); }
+  .armtx { font-weight: 800; fill: #fff; text-anchor: middle; dominant-baseline: central; pointer-events: none; paint-order: stroke; stroke: rgba(0,0,0,.7); }
+  @media (max-width: 900px) { .stat.opt { display: none; } .log { width: 60%; max-height: 90px; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a href="index.html" style="color:inherit;text-decoration:none;opacity:.75;font-size:.85rem;white-space:nowrap">&larr; Giochi</a>
+  <div class="brand">🌍 Dominio <span>Mondiale</span></div>
+  <div class="stats" id="stats"></div>
+  <div class="speed" id="speed"></div>
+</header>
+<main>
+  <div class="mapwrap" id="mapwrap">
+    <svg id="map" preserveAspectRatio="xMidYMid meet"><g id="cam"><g id="gC"></g><g id="gOcc"></g><g id="gLbl"></g><g id="gOrd"></g><g id="gArm"></g></g></svg>
+    <div class="zoombox"><button id="zIn">+</button><button id="zOut">&minus;</button><button id="zReset">⌂</button></div>
+    <div class="log" id="log"></div><div class="ask" id="ask" style="display:none"></div><div class="abar" id="abar" style="display:none"></div><div class="tip" id="tip"></div><div class="toast" id="toast"></div>
+  </div>
+  <aside class="side" id="side"><div class="scroll" id="panel"></div></aside>
+</main>
+<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+
+<script src="mondo-data.js"></script>
+<script>
+"use strict";
+if (!window.MONDO) { document.getElementById('modal').innerHTML = '<h2>Errore</h2><p>Impossibile caricare i dati della mappa. Ricarica la pagina.</p>'; throw new Error('dati mancanti'); }
+const M = window.MONDO, W = M.W, H = M.H;
+const NS = 'http://www.w3.org/2000/svg';
+
+/* ======================= COSTANTI ======================= */
+const COST_K = 1.2;        // mld $ per arruolare 1.000 soldati
+const UPKEEP_K = 0.055;    // mld $ al mese per 1.000 soldati
+const BUDGET = 0.005;      // quota mensile del PIL che diventa bilancio statale
+const MAN_FRAC = 0.012;    // quota della popolazione richiamabile
+const MAN_RATE = 0.02;     // rigenerazione mensile dei richiamabili
+const ADDEST = 2;          // mesi di addestramento
+const VEL_ARM = 55;        // unita' di mappa percorse in un mese
+const R_SCONTRO = 9, K_SCONTRO = 0.45, OCC_BASE = 0.8, MIN_ARM = 300, ATTR = 0.014;
+const MS_MESE = 6000, VELS = [0, 1, 2, 4, 8];
+const SOGLIA = 0.75;       // quota di paesi di un continente per "dominarlo"
+const CONT = ['Europa', 'Asia', 'Africa', 'Nord America', 'Sud America', 'Oceania'];
+const DIFFS = { facile: { lab: 'Facile', garr: 0.75, ia: 0.6, tregua: 30, eco: 1.15 }, normale: { lab: 'Normale', garr: 1, ia: 1, tregua: 18, eco: 1 }, difficile: { lab: 'Difficile', garr: 1.3, ia: 1.6, tregua: 10, eco: 0.95 } };
+const MESI = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+
+/* ======================= UTILITA' ======================= */
+const rnd = Math.random, clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const nf = n => Math.round(n).toLocaleString('it-IT');
+const nk = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + 'M' : n >= 1000 ? Math.round(n / 1000) + 'k' : String(Math.round(n));
+const money = b => Math.abs(b) >= 1000 ? (b / 1000).toFixed(2).replace('.', ',') + ' mila mld $' : b.toFixed(Math.abs(b) < 10 ? 2 : 1).replace('.', ',') + ' mld $';
+const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
+const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const $ = id => document.getElementById(id);
+
+/* ======================= GRIGLIA DEI PAESI ======================= */
+const IDS = M.c.map(c => c.id), IDX = {}; IDS.forEach((id, i) => IDX[id] = i);
+const GRW = Math.ceil(W), GRH = Math.ceil(H), GRID = new Int16Array(GRW * GRH).fill(-1);
+(function raster() {
+  M.c.forEach((c, ci) => {
+    const edges = []; let miny = 1e9, maxy = -1e9;
+    for (const r of c.r) for (let i = 0; i < r.length; i += 2) { const j = (i + 2) % r.length, x1 = r[i], y1 = r[i + 1], x2 = r[j], y2 = r[j + 1]; miny = Math.min(miny, y1); maxy = Math.max(maxy, y1); if (y1 !== y2) edges.push([x1, y1, x2, y2]); }
+    for (let y = Math.max(0, Math.floor(miny)); y <= Math.min(GRH - 1, Math.ceil(maxy)); y++) {
+      const yc = y + 0.5, xs = []; for (const e of edges) if ((e[1] <= yc && e[3] > yc) || (e[3] <= yc && e[1] > yc)) xs.push(e[0] + (yc - e[1]) * (e[2] - e[0]) / (e[3] - e[1]));
+      xs.sort((a, b) => a - b); for (let k = 0; k + 1 < xs.length; k += 2) { const x0 = Math.max(0, Math.ceil(xs[k] - 0.5)), x1 = Math.min(GRW - 1, Math.floor(xs[k + 1] - 0.5)); for (let x = x0; x <= x1; x++) GRID[y * GRW + x] = ci; }
+    }
+  });
+})();
+const OCC = new Int16Array(GRW * GRH).fill(-1), CELLS = new Int32Array(IDS.length), BB = [];
+for (let i = 0; i < GRID.length; i++) if (GRID[i] >= 0) CELLS[GRID[i]]++;
+M.c.forEach(c => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const r of c.r) for (let i = 0; i < r.length; i += 2) { x0 = Math.min(x0, r[i]); x1 = Math.max(x1, r[i]); y0 = Math.min(y0, r[i + 1]); y1 = Math.max(y1, r[i + 1]); } BB.push([x0, y0, x1, y1]); });
+let occDirty = false;
+function countryAt(x, y) { const ix = Math.floor(x), iy = Math.floor(y); if (ix < 0 || iy < 0 || ix >= GRW || iy >= GRH) return null; const v = GRID[iy * GRW + ix]; return v < 0 ? null : IDS[v]; }
+
+/* ======================= STATO ======================= */
+const G = { fase: 'setup', diff: 'normale', t: 0, vel: 1, me: null, C: {}, F: {}, arm: [], seq: 1, selC: null, selA: null, log: [], offers: [], own: {}, ownDirty: true, vittoria: null, threat: 0, lastCoal: 0, res: null, ui: null };
+const newRes = () => ({ lv: { arm: 0, log: 0, eco: 0, dip: 0 }, p: { arm: 0, log: 0, eco: 0, dip: 0 }, cur: null });
+G.res = newRes();
+const TECH = { arm: { n: 'Armamenti', d: '+12% di forza in combattimento per livello', cost: [12, 30, 70] }, log: { n: 'Logistica', d: '−25% logoramento in territorio ostile e +10% velocità per livello', cost: [10, 25, 60] }, eco: { n: 'Economia di guerra', d: '−10% costo delle reclute per livello', cost: [8, 22, 55] }, dip: { n: 'Diplomazia', d: '+8% probabilità di ottenere il transito per livello', cost: [8, 20, 50] } };
+const rpMese = fid => gdpOf(fid) * 0.0008;
+const techMul = fid => fid === G.me ? 1 + 0.12 * G.res.lv.arm : 1;
+const costK = fid => COST_K * (fid === G.me ? 1 - 0.1 * G.res.lv.eco : 1);
+let logDirty = true, panelDirty = true;
+const anno = () => 2025 + Math.floor(G.t / 12), mese = () => Math.floor(G.t % 12);
+const C = id => G.C[id], F = id => G.F[id];
+const contIds = {}; CONT.forEach(k => contIds[k] = M.c.filter(c => c.k === k).map(c => c.id));
+
+function ownedBy(fid) { if (G.ownDirty) { G.own = {}; for (const id of IDS) { const o = G.C[id].owner; (G.own[o] = G.own[o] || []).push(G.C[id]); } G.ownDirty = false; } return G.own[fid] || []; }
+const armiesOf = fid => G.arm.filter(a => a.owner === fid);
+const troopsOf = fid => armiesOf(fid).reduce((t, a) => t + a.n, 0);
+const queueOf = fid => F(fid).queue.reduce((t, q) => t + q.n, 0);
+function income(fid) { return ownedBy(fid).reduce((t, c) => t + c.gdp * BUDGET * (1 - 0.55 * c.unrest), 0) * DIFFS[G.diff].eco * (fid === G.me ? 1 : 1); }
+function overext(fid) { const n = ownedBy(fid).length; return 1 + 0.02 * Math.max(0, n - 12) + 0.04 * Math.max(0, n - 30); }
+function upkeep(fid) { return (troopsOf(fid) + queueOf(fid) * 0.5) / 1000 * UPKEEP_K * overext(fid); }
+function manpower(fid) { return ownedBy(fid).reduce((t, c) => t + c.man, 0); }
+function gdpOf(fid) { return ownedBy(fid).reduce((t, c) => t + c.gdp, 0); }
+function strength(fid) { return troopsOf(fid) + queueOf(fid) * 0.5 + ownedBy(fid).reduce((t, c) => t + c.garr * 0.6, 0); }
+const worldGdp = () => IDS.reduce((t, id) => t + G.C[id].gdp, 0);
+function fName(fid) { const f = F(fid), n = ownedBy(fid).length; return n > 4 ? 'Impero ' + C(f.cap).n : C(f.cap) ? C(f.cap).n : f.name; }
+const maxGarr = c => (6000 * Math.sqrt(c.pop) + c.gdp * 8) * 0.55 * DIFFS[G.diff].garr;
+const resist = c => 3000 * Math.sqrt(c.pop) + 3000;
+
+function log(txt, cls) { G.log.unshift({ a: anno(), m: mese(), txt, cls: cls || '' }); if (G.log.length > 200) G.log.pop(); logDirty = true; }
+let toastT = 0; function avvisa(txt) { const t = $('toast'); t.textContent = txt; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2800); }
+
+/* ======================= DIPLOMAZIA ======================= */
+const inGuerra = (a, b) => a !== b && !!(F(a).war[b] !== undefined);
+function relBase(a, b) { const ca = C(F(a).cap), cb = C(F(b).cap); let r = (hash(a < b ? a + b : b + a) - 0.5) * 0.6; r += (ca && cb && ca.k === cb.k) ? 0.12 : -0.05; if (ca && cb && ca.nb.includes(cb.id)) r -= 0.08; return r; }
+function rel(a, b) { return clamp(relBase(a, b) + (F(a).rel[b] || 0), -1, 1); }
+function addRel(a, b, d) { F(a).rel[b] = clamp((F(a).rel[b] || 0) + d, -1, 1); }
+function pTransito(req, host, comprato) {
+  let p = 0.5 + rel(host, req) * 0.55;
+  const share = gdpOf(req) / worldGdp(); p -= clamp((share - 0.08) * 1.6, 0, 0.3);        // i giganti insospettiscono
+  if (strength(req) > strength(host) * 3) p -= 0.08;
+  return clamp(p + (comprato ? 0.38 : 0) + (req === G.me ? 0.08 * G.res.lv.dip : 0), 0.05, 0.95);
+}
+function chiediTransito(req, host, comprato) {
+  const ok = rnd() < pTransito(req, host, comprato); F(req).tr[host] = { ok, until: G.t + (ok ? (comprato ? 18 : 10) : 5) };
+  if (req === G.me) { if (ok) { log(`🤝 ${fName(host)} concede il transito alle nostre armate (${comprato ? '18' : '10'} mesi).`, 'dip'); avvisa(`🤝 ${fName(host)} ci lascia passare`); } else { log(`⛔ ${fName(host)} nega il transito alle nostre armate.`, 'bad'); avvisa(`⛔ ${fName(host)} nega il transito`); } }
+  if (ok) addRel(host, req, 0.03);
+  return ok;
+}
+function dichiaraGuerra(a, b, motivo) {
+  if (a === b || inGuerra(a, b)) return; F(a).war[b] = G.t; F(b).war[a] = G.t; delete F(a).tr[b]; delete F(b).tr[a];
+  addRel(b, a, -0.5); addRel(a, b, -0.2);
+  for (const c of ownedBy(b)) for (const nid of c.nb) { const o = C(nid).owner; if (o !== a && o !== b && o !== F(b).id) addRel(o, a, -0.06); }   // i vicini si allarmano
+  if (a === G.me) log(`⚔️ Abbiamo dichiarato guerra a ${fName(b)}${motivo ? ' (' + motivo + ')' : ''}.`, 'big');
+  else if (b === G.me) { log(`⚔️ ${fName(a)} ci ha dichiarato guerra${motivo ? ' (' + motivo + ')' : ''}!`, 'bad'); avvisa(`⚔️ ${fName(a)} ci dichiara guerra!`); }
+  else log(`⚔️ ${fName(a)} ha dichiarato guerra a ${fName(b)}.`, 'dip');
+  panelDirty = true;
+}
+function faiPace(a, b) {
+  if (!inGuerra(a, b)) return; delete F(a).war[b]; delete F(b).war[a]; addRel(a, b, 0.2); addRel(b, a, 0.2); F(a).pace = F(b).pace = G.t;
+  if (a === G.me || b === G.me) log(`🕊️ Pace con ${fName(a === G.me ? b : a)}.`, 'good'); else log(`🕊️ ${fName(a)} e ${fName(b)} firmano la pace.`, 'dip');
+  panelDirty = true;
+}
+function proponiPace(a, b) {   // a propone a b
+  const mesi = G.t - F(a).war[b]; if (mesi < 3) return false;
+  const sa = strength(a), sb = strength(b); let p = 0.12 + clamp((sa / (sb + 1) - 1) * 0.35, 0, 0.5) + Math.min(0.2, mesi / 120);
+  if (sb < sa * 0.6) p += 0.25; if (rnd() < p) { faiPace(a, b); return true; } return false;
+}
+
+/* ======================= AVVIO PARTITA ======================= */
+function palette(i) { return `hsl(${Math.round((i * 137.508) % 360)},52%,${44 + (i % 3) * 4}%)`; }
+function startGame(pid, diff) {
+  Object.assign(G, { fase: 'play', diff, t: 0, vel: 1, me: pid, C: {}, F: {}, arm: [], seq: 1, selC: pid, selA: null, log: [], offers: [], own: {}, ownDirty: true, vittoria: null, threat: 0, lastCoal: 0, res: newRes(), ui: null });
+  const D = DIFFS[diff];
+  M.c.forEach((c, i) => {
+    const rc = { id: c.id, n: c.n, k: c.k, pop: c.pop, gdp: c.gdp, gdp0: c.gdp, lx: c.lx, ly: c.ly, nb: c.nb, owner: c.id, unrest: 0, occ: null, man: 0, maxMan: c.pop * 1e6 * MAN_FRAC, garr: 0 };
+    rc.occList = []; rc.cnt = {}; rc.fr = {}; rc.man = rc.maxMan * 0.7; rc.garr = maxGarr(rc) * 0.8; G.C[c.id] = rc;
+    G.F[c.id] = { id: c.id, name: c.n, color: palette(i), cap: c.id, money: 0, queue: [], war: {}, rel: {}, tr: {}, aiT: rnd() * 4, alive: true, pace: -99 };
+  });
+  G.F[pid].color = '#ffb347'; G.ownDirty = true; OCC.fill(-1); occDirty = true; G.ask = null;
+  for (const id of IDS) { const f = F(id); f.money = income(id) * (id === pid ? 10 : 4); }
+  // armate iniziali: i paesi piu' ricchi partono con un esercito mobile
+  [...M.c].sort((a, b) => b.gdp - a.gdp).slice(0, 70).forEach(c => { const rc = C(c.id); creaArmata(c.id, Math.max(MIN_ARM * 2, rc.garr * 0.9), rc.lx, rc.ly); });
+  if (!armiesOf(pid).length) { const rc = C(pid); creaArmata(pid, Math.max(MIN_ARM * 3, rc.garr * 0.9), rc.lx, rc.ly); }
+  log(`Comincia la partita: guidi ${C(pid).n}. Obiettivo: dominare 2 continenti.`, 'big');
+  $('overlay').classList.add('hidden'); buildMap(); applyView(); paintMap(); panelDirty = true; logDirty = true;
+}
+
+/* ======================= ARMATE ======================= */
+function creaArmata(owner, n, x, y) { const a = { id: G.seq++, owner, n, x, y, tx: x, ty: y, cid: countryAt(x, y), combatte: false, blocked: 0, ordine: null, path: [] }; G.arm.push(a); return a; }
+function aggiungiTruppe(owner, n, x, y) { const a = G.arm.find(q => q.owner === owner && Math.hypot(q.x - x, q.y - y) < 4.5 && Math.hypot(q.tx - q.x, q.ty - q.y) < 1); if (a) { a.n += n; return a; } return creaArmata(owner, n, x, y); }
+function eliminaArmata(a) { const i = G.arm.indexOf(a); if (i >= 0) G.arm.splice(i, 1); if (G.selA === a.id) G.selA = null; }
+function dividiArmata(a, frac) { const n = Math.floor(a.n * frac); if (n < MIN_ARM || a.n - n < MIN_ARM) return null; a.n -= n; const b = creaArmata(a.owner, n, a.x + 2.5, a.y + 2); b.cid = a.cid; return b; }
+function ordina(a, x, y) { a.tx = clamp(x, 0, W); a.ty = clamp(y, 0, H); a.blocked = 0; a.path = []; }
+function ordinaPercorso(a, pts) { const q = pts.map(p => ({ x: clamp(p.x, 0, W), y: clamp(p.y, 0, H) })); if (!q.length) return; const f = q.shift(); a.tx = f.x; a.ty = f.y; a.path = q; a.blocked = 0; }
+// puo' l'armata entrare in questo paese?
+function puoiEntrare(a, cid) {
+  const c = C(cid), o = c.owner; if (o === a.owner || inGuerra(a.owner, o)) return true;
+  let tr = F(a.owner).tr[o]; if (!(tr && tr.until > G.t)) { chiediTransito(a.owner, o, false); tr = F(a.owner).tr[o]; }
+  if (tr.ok) return true;
+  if (a.owner === G.me) { dichiaraGuerra(o, a.owner, 'transito negato e violato'); return true; }   // il giocatore forza il passaggio: il paese ci dichiara guerra
+  return false;
+}
+function tickArmate(dtM) {
+  for (const a of G.arm) {
+    let dx = a.tx - a.x, dy = a.ty - a.y, d = Math.hypot(dx, dy); if (d < 0.4) { if (a.path.length) { const q = a.path.shift(); a.tx = q.x; a.ty = q.y; } continue; }
+    let rem = Math.min(d, VEL_ARM * (a.owner === G.me ? 1 + 0.1 * G.res.lv.log : 1) * (a.cid ? 1 : 0.8) * (a.combatte ? 0.35 : 1) * dtM);
+    while (rem > 0.001) {
+      dx = a.tx - a.x; dy = a.ty - a.y; d = Math.hypot(dx, dy); if (d < 0.2) { if (a.path.length) { const q = a.path.shift(); a.tx = q.x; a.ty = q.y; continue; } break; }
+      const st = Math.min(rem, 1.1, d), nx = a.x + dx / d * st, ny = a.y + dy / d * st, c2 = countryAt(nx, ny);
+      if (c2 !== a.cid) { if (c2 && !puoiEntrare(a, c2)) { a.tx = a.x; a.ty = a.y; a.blocked = G.t; break; } a.cid = c2; }
+      a.x = nx; a.y = ny; rem -= st;
+    }
+  }
+  // armate alleate ferme e vicine si fondono
+  for (let i = G.arm.length - 1; i >= 0; i--) {
+    const a = G.arm[i]; if (a.path.length || Math.hypot(a.tx - a.x, a.ty - a.y) > 1.2) continue;
+    for (let j = 0; j < i; j++) { const b = G.arm[j]; if (b.owner !== a.owner || b.path.length || Math.hypot(b.tx - b.x, b.ty - b.y) > 1.2) continue; if (Math.hypot(a.x - b.x, a.y - b.y) < 3.6) { b.n += a.n; if (G.selA === a.id) G.selA = b.id; G.arm.splice(i, 1); break; } }
+  }
+}
+// armate in transito: scaduto il permesso, devono andarsene
+function tickTransiti(dtM) {
+  if (!tickTransiti.acc) tickTransiti.acc = 0; tickTransiti.acc += dtM; if (tickTransiti.acc < 1) return; tickTransiti.acc -= 1;
+  for (const a of G.arm) {
+    if (!a.cid) continue; const c = C(a.cid), o = c.owner; if (o === a.owner || inGuerra(a.owner, o)) continue;
+    const tr = F(a.owner).tr[o]; if (tr && tr.until > G.t) continue;
+    // senza permesso valido: violazione
+    addRel(o, a.owner, -0.1);
+    if (a.owner === G.me) log(`⚠️ Le nostre truppe sostano in ${c.n} senza permesso: ${fName(o)} si irrita.`, 'bad');
+    if (o !== G.me && rnd() < 0.3 * DIFFS[G.diff].ia && G.t > DIFFS[G.diff].tregua * 0.5) dichiaraGuerra(o, a.owner, 'violazione del territorio');
+    else if (o === G.me && a.owner !== G.me && rnd() < 0.3) { /* il giocatore decide */ }
+  }
+}
+function tickScontri(dtM) {
+  for (const a of G.arm) a.combatte = false;
+  for (let i = 0; i < G.arm.length; i++) for (let j = i + 1; j < G.arm.length; j++) {
+    const a = G.arm[i], b = G.arm[j]; if (a.owner === b.owner || !inGuerra(a.owner, b.owner) || Math.hypot(a.x - b.x, a.y - b.y) > R_SCONTRO) continue;
+    const ca = a.cid ? C(a.cid) : null, cb = b.cid ? C(b.cid) : null, terr = ca || cb; a.combatte = b.combatte = true;
+    const ba = terr && terr.owner === a.owner ? 1.25 : 1, bb = terr && terr.owner === b.owner ? 1.25 : 1, fa = a.n * ba * techMul(a.owner) * (0.9 + 0.2 * rnd()), fb = b.n * bb * techMul(b.owner) * (0.9 + 0.2 * rnd()), tot = fa + fb || 1;
+    a.n -= Math.min(a.n, (fb * K_SCONTRO + 50) * dtM); b.n -= Math.min(b.n, (fa * K_SCONTRO + 50) * dtM);
+  }
+  // armate contro guarnigioni e logoramento del territorio ostile
+  for (const a of G.arm) {
+    if (!a.cid) continue; const c = C(a.cid); if (c.owner === a.owner || !inGuerra(a.owner, c.owner)) continue;
+    let att = ATTR * (a.owner === G.me ? 1 - 0.25 * G.res.lv.log : 1); if (c.nb.some(n => C(n).owner === a.owner)) att *= 0.55;            // vicino ai rifornimenti si soffre meno
+    a.n -= Math.min(a.n, (a.n * att + 25) * dtM);                                           // logoramento: partigiani, fame, malattie
+    if (c.garr > 5) {
+      a.combatte = true; const fa = a.n * techMul(a.owner) * (0.9 + 0.2 * rnd()), fg = c.garr * 1.25 * (0.9 + 0.2 * rnd()), tot = fa + fg || 1;
+      a.n -= Math.min(a.n, (fg * K_SCONTRO + 30) * dtM); c.garr -= Math.min(c.garr, (fa * K_SCONTRO + 30) * dtM);
+    }
+  }
+  for (let i = G.arm.length - 1; i >= 0; i--) { const a = G.arm[i]; if (a.n < MIN_ARM) { if (a.owner === G.me) log(`Un'armata nostra è stata annientata${a.cid ? ' in ' + C(a.cid).n : ''}.`, 'bad'); else if (a.cid && C(a.cid).owner === G.me) log(`Abbiamo annientato un'armata di ${fName(a.owner)} in ${C(a.cid).n}.`, 'good'); eliminaArmata(a); } }
+}
+const SOGLIA_OCC = 0.55;   // quota del territorio da occupare per annettere il paese
+function liberaCelle(c) { for (const idx of c.occList) OCC[idx] = -1; c.occList = []; c.cnt = {}; c.fr = {}; c.occ = null; occDirty = true; }
+function occupaCella(c, fid, idx, fr) { OCC[idx] = IDX[fid]; c.occList.push(idx); c.cnt[fid] = (c.cnt[fid] || 0) + 1; fr.q.push(idx); occDirty = true; }
+function semiConfine(c, ci, fid, a, fr) {   // celle del paese che toccano un territorio del invasore, vicino all'armata
+  const b = BB[ci], x0 = Math.max(0, Math.floor(Math.max(b[0], a.x - 70))), x1 = Math.min(GRW - 1, Math.ceil(Math.min(b[2], a.x + 70))), y0 = Math.max(0, Math.floor(Math.max(b[1], a.y - 70))), y1 = Math.min(GRH - 1, Math.ceil(Math.min(b[3], a.y + 70)));
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const idx = y * GRW + x; if (GRID[idx] !== ci || OCC[idx] >= 0) continue;
+    const nbs = [x > 0 ? idx - 1 : -1, x < GRW - 1 ? idx + 1 : -1, y > 0 ? idx - GRW : -1, y < GRH - 1 ? idx + GRW : -1];
+    for (const n of nbs) { if (n < 0) continue; const g = GRID[n]; if (g >= 0 && g !== ci && C(IDS[g]).owner === fid) { occupaCella(c, fid, idx, fr); break; } }
+  }
+}
+function espandi(c, ci, fid, fr, budget) {   // l'occupazione si allarga in modo continuo, cella dopo cella, dal fronte
+  const q = fr.q; let n = 0;
+  while (n < budget && fr.h < q.length) {
+    const idx = q[fr.h++], x = idx % GRW, y = (idx / GRW) | 0;
+    const nbs = [x > 0 ? idx - 1 : -1, x < GRW - 1 ? idx + 1 : -1, y > 0 ? idx - GRW : -1, y < GRH - 1 ? idx + GRW : -1];
+    for (const ni of nbs) if (ni >= 0 && GRID[ni] === ci && OCC[ni] < 0) { occupaCella(c, fid, ni, fr); n++; }
+  }
+  if (fr.h > 4000) { q.splice(0, fr.h); fr.h = 0; }
+}
+function tickOccupazione(dtM) {
+  for (const id of IDS) {
+    const c = C(id), ci = IDX[id], dentro = G.arm.filter(a => a.cid === id), dif = dentro.filter(a => a.owner === c.owner).reduce((t, a) => t + a.n, 0);
+    const invA = dentro.filter(a => a.owner !== c.owner && inGuerra(a.owner, c.owner)), att = invA.reduce((t, a) => t + a.n, 0);
+    if (invA.length && dif <= att * 1.5) {
+      // invasione anche con difensori ancora in campo: parte dal confine e da dove si trova l'armata e avanza compatta
+      const per = {}; invA.forEach(a => (per[a.owner] = per[a.owner] || []).push(a));
+      for (const fid in per) {
+        const arms = per[fid].sort((x, y) => y.n - x.n), tot = arms.reduce((t, a) => t + a.n, 0), fr = c.fr[fid] = c.fr[fid] || { q: [], h: 0, init: false };
+        if (!fr.init) { fr.init = true; semiConfine(c, ci, fid, arms[0], fr); }
+        for (const a of arms) { const ix = Math.floor(a.x), iy = Math.floor(a.y); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = ix + dx, y = iy + dy; if (x < 0 || y < 0 || x >= GRW || y >= GRH) continue; const idx = y * GRW + x; if (GRID[idx] === ci && OCC[idx] < 0) occupaCella(c, fid, idx, fr); } }
+        const share = tot / (tot + (dif + c.garr) * 1.1 + 1), rate = 130 * Math.min(1.6, tot / resist(c)) * clamp(share * 1.8, 0.1, 1.2), k = rate * dtM, m = Math.floor(k) + (rnd() < k % 1 ? 1 : 0);
+        espandi(c, ci, fid, fr, m);
+      }
+    } else if (c.occList.length && (!invA.length || dif > att * 1.5)) {   // senza occupanti (o con difensori molto piu' forti) le zone tornano indietro
+      c.fr = {}; const m = Math.ceil(c.occList.length * 0.07 * dtM); for (let q = 0; q < m && c.occList.length; q++) { const idx = c.occList.pop(), o = OCC[idx]; OCC[idx] = -1; if (o >= 0) c.cnt[IDS[o]]--; occDirty = true; }
+    }
+    if (c.occList.length) {
+      let top = null, tc = 0; for (const o in c.cnt) if (c.cnt[o] > tc) { tc = c.cnt[o]; top = o; }
+      const pct = tc / Math.max(1, CELLS[ci]); if (top && tc > 0) { c.occ = { owner: top, frac: Math.min(1, pct / SOGLIA_OCC), pct }; if (pct >= SOGLIA_OCC) cattura(c, top); } else c.occ = null;
+    } else c.occ = null;
+  }
+}
+function cattura(c, nuovo) {
+  const vecchio = c.owner; liberaCelle(c); c.owner = nuovo; c.unrest = Math.min(1, 0.6 + c.pop / 500); c.garr = maxGarr(c) * 0.1; G.ownDirty = true;
+  addRel(vecchio, nuovo, -0.3);
+  if (nuovo === G.me) { log(`🏴 ${c.n} è nostra! Occupazione completata.`, 'big'); avvisa(`🏴 ${c.n} conquistata!`); } else if (vecchio === G.me) { log(`💥 ${c.n} è caduta in mano a ${fName(nuovo)}.`, 'bad'); avvisa(`💥 ${c.n} è caduta!`); } else log(`${fName(nuovo)} conquista ${c.n}.`);
+  const f = F(vecchio); if (f.cap === c.id) { const resta = ownedBy(vecchio).sort((a, b) => b.gdp - a.gdp)[0]; if (resta) f.cap = resta.id; }
+  if (!ownedBy(vecchio).length) { f.alive = false; for (const a of armiesOf(vecchio).slice()) eliminaArmata(a); f.queue = []; if (vecchio === G.me) fine(false, 'Hai perso tutti i territori.'); else log(`${C(vecchio).n} non esiste più come nazione indipendente.`, 'dip'); }
+  paintOne(c.id); panelDirty = true; controllaVittoria();
+}
+function rivolta(c) {
+  const chi = c.owner, f = F(c.id); liberaCelle(c); c.owner = c.id; c.unrest = 0; c.garr = maxGarr(c) * 0.7; G.ownDirty = true;
+  if (!f.alive) { f.alive = true; f.cap = c.id; f.money = 0; f.queue = []; f.war = {}; } if (!ownedBy(c.id).length) { }
+  dichiaraGuerra(c.id, chi, 'rivolta'); creaArmata(c.id, Math.max(MIN_ARM * 2, c.garr * 0.4), c.lx, c.ly);
+  if (chi === G.me) { log(`🔥 Rivolta in ${c.n}: si è liberata dal nostro dominio e ci dichiara guerra!`, 'bad'); avvisa(`🔥 ${c.n} si ribella!`); } else log(`🔥 ${c.n} si ribella contro ${fName(chi)}.`, 'dip');
+  paintOne(c.id); panelDirty = true;
+}
+
+/* ======================= ECONOMIA E RECLUTAMENTO ======================= */
+function maxArruolabili(fid) { return Math.max(0, Math.min(Math.floor(manpower(fid) / 1000), Math.floor(F(fid).money / costK(fid)))); }
+function recluta(fid, k, cid) {
+  const f = F(fid); k = Math.min(k, maxArruolabili(fid)); if (k <= 0) return 0; f.money -= k * costK(fid);
+  const mine = ownedBy(fid), tot = mine.reduce((t, c) => t + c.man, 0) || 1; mine.forEach(c => { c.man = Math.max(0, c.man - k * 1000 * c.man / tot); });
+  f.queue.push({ n: k * 1000, cid: cid && C(cid).owner === fid ? cid : f.cap, left: ADDEST }); if (fid === G.me) log(`${nf(k * 1000)} reclute in addestramento a ${C(f.queue[f.queue.length - 1].cid).n}.`); return k;
+}
+function tickEconomia(dtM) {
+  const Rs = G.res; if (Rs.cur && G.fase === 'play') { const T = TECH[Rs.cur], l = Rs.lv[Rs.cur]; Rs.p[Rs.cur] += rpMese(G.me) * dtM; if (Rs.p[Rs.cur] >= T.cost[l]) { Rs.lv[Rs.cur]++; Rs.p[Rs.cur] = 0; log(`🔬 Ricerca completata: ${T.n} livello ${l + 1}.`, 'good'); avvisa(`🔬 ${T.n} livello ${l + 1}!`); Rs.cur = Rs.lv[Rs.cur] < 3 ? Rs.cur : null; panelDirty = true; } }
+  for (const id of IDS) {
+    const f = F(id); if (!f.alive) continue; f.money += (income(id) - upkeep(id)) * dtM;
+    if (f.money < 0) { const dis = Math.min(troopsOf(id) * 0.04 * dtM, -f.money / (UPKEEP_K / 1000) * 0.1); if (dis > 0) { const a = armiesOf(id).sort((x, y) => y.n - x.n)[0]; if (a) { a.n -= Math.min(a.n - 1, dis); if (a.n < MIN_ARM) eliminaArmata(a); if (id === G.me && rnd() < 0.05) log('Fondi esauriti: i soldati disertano!', 'bad'); } } f.money = Math.max(f.money, -income(id) * 6); }
+    for (const q of f.queue) q.left -= dtM; const pronti = f.queue.filter(q => q.left <= 0); if (pronti.length) { f.queue = f.queue.filter(q => q.left > 0); for (const q of pronti) { const c = C(q.cid).owner === id ? C(q.cid) : C(f.cap); aggiungiTruppe(id, q.n, c.lx, c.ly); } }
+  }
+  for (const id of IDS) {
+    const c = C(id), sal = 1 - 0.6 * c.unrest; c.gdp *= 1 + 0.0014 * sal * dtM; c.man = Math.min(c.maxMan, c.man + c.maxMan * MAN_RATE * (1 - 0.5 * c.unrest) * dtM);
+    const mg = maxGarr(c), tr = G.arm.filter(a => a.cid === id && a.owner === c.owner).reduce((t, a) => t + a.n, 0), pres = clamp((c.garr + tr) / (mg * 0.9 + 1), 0, 1);
+    if (c.garr < mg && !(c.occ)) c.garr = Math.min(mg, c.garr + (c.garr * 0.03 + 120) * dtM);
+    if (c.unrest > 0) { c.unrest = Math.max(0, c.unrest - (0.04 + 0.05 * pres) * dtM); if (c.owner !== id && c.unrest > 0.4 && rnd() < (c.unrest - 0.4) * (1 - pres) * 0.45 * dtM) rivolta(c); }
+  }
+}
+
+/* ======================= INTELLIGENZA ARTIFICIALE ======================= */
+function aiTick(f, dtM) {
+  const id = f.id, mine = ownedBy(id), D = DIFFS[G.diff]; if (!mine.length) return;
+  // 1. arruolamento: tiene il bilancio in equilibrio
+  const inc = income(id), inGuerraN = Object.keys(f.war).length, tMax = inc * (inGuerraN ? 0.62 : 0.35) / UPKEEP_K * 1000;
+  if (troopsOf(id) + queueOf(id) < tMax && f.money > COST_K * 3) { const k = Math.min(maxArruolabili(id), Math.floor(Math.min(f.money * 0.5, inc * 4) / COST_K), Math.ceil((tMax - troopsOf(id) - queueOf(id)) / 1000)); if (k >= 2) recluta(id, k, f.cap); }
+  // 2. decide una guerra
+  if (G.t > D.tregua && !inGuerraN && rnd() < 0.035 * D.ia * (1 + Math.min(2, G.threat * 4) * (id === G.me ? 0 : 1))) { const b = aiBersaglio(id); if (b) dichiaraGuerra(id, b.fid, b.motivo); }
+  // 3. cerca la pace se sta perdendo
+  for (const e of Object.keys(f.war)) { if (G.t - f.war[e] > 16 && strength(id) < strength(e) * 0.5 && rnd() < 0.3) { if (e === G.me) { if (!G.offers.find(o => o.da === id)) { G.offers.push({ da: id, fino: G.t + 5 }); log(`🕊️ ${fName(id)} chiede la pace.`, 'dip'); avvisa(`🕊️ ${fName(id)} chiede la pace`); panelDirty = true; } } else proponiPace(id, e); } }
+  // 4. muove le armate
+  aiMuovi(id);
+}
+function aiBersaglio(id) {
+  const f = F(id), mine = ownedBy(id), cand = new Set(), cap = C(f.cap), mia = strength(id); if (mia < 5000) return null;
+  for (const c of mine) for (const n of c.nb) { const o = C(n).owner; if (o !== id) cand.add(o); }
+  for (const c of M.c) { const rc = C(c.id); if (rc.owner !== id && Math.hypot(rc.lx - cap.lx, rc.ly - cap.ly) < 170) cand.add(rc.owner); }
+  let best = null, bs = 0;
+  for (const o of cand) {
+    if (!F(o).alive || F(o).pace > G.t - 8 && F(id).pace > G.t - 8) continue; const sdef = strength(o) * 1.3 + 1, ratio = mia / sdef; if (ratio < 1.5 / DIFFS[G.diff].ia + 0.3) continue;
+    const co = C(F(o).cap), dist = Math.hypot(co.lx - cap.lx, co.ly - cap.ly), sc = ratio * (1 + gdpOf(o) / 3000) / (1 + dist / 120) * (1 - rel(id, o) * 0.6); if (sc > bs) { bs = sc; best = o; }
+  }
+  if (!best) return null; return { fid: best, motivo: best === G.me ? (G.threat > 0.18 ? 'coalizione contro il dominio globale' : 'ambizioni territoriali') : 'ambizioni territoriali' };
+}
+function puntoLibero(cid, a) { const ci = IDX[cid], b = BB[ci]; let best = null, bd = 1e9; for (let q = 0; q < 40; q++) { const x = b[0] + rnd() * (b[2] - b[0]), y = b[1] + rnd() * (b[3] - b[1]), ix = Math.floor(x), iy = Math.floor(y); if (ix < 0 || iy < 0 || ix >= GRW || iy >= GRH) continue; const idx = iy * GRW + ix; if (GRID[idx] !== ci || OCC[idx] >= 0) continue; const d = Math.hypot(x - a.x, y - a.y); if (d > 5 && d < bd) { bd = d; best = { x, y }; } } return best; }
+function aiMuovi(id) {
+  const f = F(id), nem = Object.keys(f.war).filter(e => F(e).alive); if (!nem.length) return; const mine = armiesOf(id);
+  // difesa: armate nemiche in casa
+  for (const a of mine) {
+    if (Math.hypot(a.tx - a.x, a.ty - a.y) > 2 || a.n < 1500) continue;
+    let tgt = null, bd = 1e9;
+    for (const e of nem) for (const b of armiesOf(e)) { if (b.cid && C(b.cid).owner === id) { const d = Math.hypot(b.x - a.x, b.y - a.y); if (d < bd) { bd = d; tgt = b; } } }
+    if (tgt && bd < 220) { ordina(a, tgt.x, tgt.y); continue; }
+    // attacco: il paese nemico piu' conveniente
+    let best = null, bs = -1;
+    for (const c of M.c) { const rc = C(c.id); if (!nem.includes(rc.owner)) continue; const d = Math.hypot(rc.lx - a.x, rc.ly - a.y), debol = (rc.garr + 1) / (a.n + 1), sc = 1 / (1 + d / 80) / (0.5 + debol); if (sc > bs && debol < 1.6) { bs = sc; best = rc; } }
+    if (best) ordina(a, best.lx, best.ly);
+  }
+}
+function tickAI(dtM) { for (const id of IDS) { const f = F(id); if (!f.alive || id === G.me) continue; f.aiT -= dtM; if (f.aiT <= 0) { f.aiT = 1 + rnd() * 1.6; aiTick(f, dtM); } } }
+
+/* ======================= DIPLOMAZIA PERIODICA, MINACCIA E VITTORIA ======================= */
+let monthAcc = 0;
+function tickMese() {
+  G.offers = G.offers.filter(o => o.fino > G.t && F(o.da).alive && inGuerra(G.me, o.da));
+  const share = gdpOf(G.me) / worldGdp(); G.threat = Math.max(0, share - 0.08);
+  // coalizione contro chi diventa troppo grande
+  if (share > 0.16 && G.t - G.lastCoal > 10) {
+    G.lastCoal = G.t; const sorted = IDS.filter(id => F(id).alive && id !== G.me && !inGuerra(id, G.me) && ownedBy(id).length).sort((a, b) => strength(b) - strength(a)).slice(0, 12);
+    let n = 0; for (const o of sorted) { if (n >= 2 + Math.floor(share * 10)) break; if (rel(o, G.me) < 0.35 && rnd() < 0.6) { dichiaraGuerra(o, G.me, 'coalizione contro il dominio globale'); n++; } }
+    if (n) { log(`⚠️ Si forma una coalizione contro di noi: ${n} nuove guerre!`, 'bad'); }
+  }
+  for (const id of IDS) { const f = F(id); if (!f.alive) continue; for (const k in f.rel) f.rel[k] *= 0.985; }
+  controllaVittoria(); panelDirty = true;
+}
+function quota(k) { const ids = contIds[k]; return ids.filter(id => C(id).owner === G.me).length / ids.length; }
+function controllaVittoria() {
+  if (G.fase !== 'play') return; const dom = CONT.filter(k => quota(k) >= SOGLIA); G.dom = dom;
+  if (dom.length >= 2) fine(true, `Domini ${dom.join(' e ')}!`);
+}
+function fine(vinto, txt) {
+  if (G.fase !== 'play') return; G.fase = 'fine'; G.vel = 0; G.vittoria = vinto; syncSpeed();
+  const mesi = Math.round(G.t), paesi = ownedBy(G.me).length;
+  $('modal').innerHTML = `<h2>${vinto ? '🏆 Dominio mondiale!' : '💀 Sconfitta'}</h2><p>${txt}</p><p>Durata: ${Math.floor(mesi / 12)} anni e ${mesi % 12} mesi · Paesi controllati: ${paesi} · PIL controllato: ${money(gdpOf(G.me))}</p><div class="btns"><button id="bNew">Nuova partita</button><a href="index.html"><button class="ghost" type="button">Torna ai giochi</button></a></div>`;
+  $('overlay').classList.remove('hidden'); $('bNew').onclick = menuIniziale;
+}
+
+/* ======================= CICLO DI SIMULAZIONE ======================= */
+function tick(dtM) {
+  tickEconomia(dtM); tickArmate(dtM); tickTransiti(dtM); tickScontri(dtM); tickOccupazione(dtM); tickAI(dtM);
+  G.t += dtM; monthAcc += dtM; if (monthAcc >= 1) { monthAcc -= 1; tickMese(); }
+}
+
+/* ======================= MAPPA ======================= */
+const SVG = $('map'), CAM = $('cam'), gC = $('gC'), gOcc = $('gOcc'), gLbl = $('gLbl'), gOrd = $('gOrd'), gArm = $('gArm');
+SVG.setAttribute('viewBox', `0 0 ${W} ${H}`);
+let view = { x: 0, y: 0, k: 1 }, scaleBase = 1; const paths = {}, lblEls = {}, armEls = new Map();
+function buildMap() {
+  gC.innerHTML = ''; gLbl.innerHTML = ''; gOcc.innerHTML = '';
+  const byArea = [...M.c].map(c => { let a = 0; for (const r of c.r) { let s = 0; for (let i = 0; i < r.length; i += 2) { const j = (i + 2) % r.length; s += r[i] * r[j + 1] - r[j] * r[i + 1]; } a += Math.abs(s / 2); } return { id: c.id, a }; }).sort((x, y) => y.a - x.a); const rank = {}; byArea.forEach((o, i) => rank[o.id] = i);
+  for (const c of M.c) {
+    const p = el('path', { d: c.r.map(r => 'M' + r.map((v, i) => (i % 2 ? ',' : (i ? 'L' : '')) + v).join('') + 'Z').join(''), 'fill-rule': 'evenodd', class: 'path', 'data-id': c.id }); const pd = el('path', { d: p.getAttribute('d'), 'fill-rule': 'evenodd', fill: 'none', stroke: '#06121e', 'stroke-width': 1.6, 'stroke-linejoin': 'round', 'pointer-events': 'none' }); gC.appendChild(pd); pdEls[c.id] = pd; gC.appendChild(p); paths[c.id] = p;
+    const t = el('text', { x: c.lx, y: c.ly, class: 'lbl' }); t.textContent = c.n; t.dataset.rank = rank[c.id]; gLbl.appendChild(t); lblEls[c.id] = t;
+  }
+}
+let bordDirty = true; const pdEls = {};
+function reorderPaths() {   // per proprietario: prima i contorni scuri, poi i colori col bordo uguale al riempimento: i confini interni spariscono
+  bordDirty = false; const g = {}; for (const id of IDS) (g[C(id).owner] = g[C(id).owner] || []).push(id);
+  for (const o in g) { for (const id of g[o]) gC.appendChild(pdEls[id]); for (const id of g[o]) gC.appendChild(paths[id]); }
+  renderLabels();
+}
+function paintOne(id) { const p = paths[id], c = C(id); if (!p) return; const col = F(c.owner).color; p.setAttribute('fill', col); p.setAttribute('stroke', col); p.classList.toggle('sel', G.selC === id); if (!G.selOnly) bordDirty = true; }
+function paintMap() { for (const id of IDS) paintOne(id); }
+function resizeMap() { const r = SVG.getBoundingClientRect(); scaleBase = Math.min(r.width / W, r.height / H) || 1; renderLabels(); }
+function applyView() { CAM.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`); renderLabels(); }
+function clampView() { view.k = clamp(view.k, 1, 14); const r = SVG.getBoundingClientRect(), offx = (r.width / scaleBase - W) / 2, offy = (r.height / scaleBase - H) / 2; view.x = clamp(view.x, W - W * view.k - offx - 30, -offx * 0 + 30 + offx); view.y = clamp(view.y, H - H * view.k - offy - 30, 30 + offy); }
+const occCv = document.createElement('canvas'); occCv.width = GRW; occCv.height = GRH; const occCtx = occCv.getContext('2d'), occImg = el('image', { x: 0, y: 0, width: GRW, height: GRH, 'pointer-events': 'none', preserveAspectRatio: 'none' }); CAM.insertBefore(occImg, gOcc);
+const rgbC = {}, tcx = document.createElement('canvas').getContext('2d'); function rgbOf(o) { if (!rgbC[o]) { tcx.clearRect(0, 0, 1, 1); tcx.fillStyle = F(IDS[o]).color; tcx.fillRect(0, 0, 1, 1); rgbC[o] = tcx.getImageData(0, 0, 1, 1).data.slice(0, 3); } return rgbC[o]; }
+function drawOcc() { occDirty = false; const im = occCtx.createImageData(GRW, GRH), d = im.data; for (let i = 0; i < OCC.length; i++) { const o = OCC[i]; if (o < 0) continue; const c = rgbOf(o); d[4 * i] = c[0]; d[4 * i + 1] = c[1]; d[4 * i + 2] = c[2]; d[4 * i + 3] = 225; } occCtx.putImageData(im, 0, 0); occImg.setAttribute('href', occCv.toDataURL()); }
+function renderLabels() {
+  const lim = 14 + Math.pow(view.k, 1.7) * 14, fs = clamp(7.2 / Math.pow(view.k, 0.82), 1.6, 8);
+  for (const id in lblEls) { const t = lblEls[id], show = +t.dataset.rank < lim && C(id).owner === id; t.style.display = show ? '' : 'none'; if (show) { t.setAttribute('font-size', fs); t.setAttribute('stroke-width', fs * 0.28); } }
+  renderArmate();
+}
+function zoomAt(cx, cy, f) { const r = SVG.getBoundingClientRect(), px = (cx - r.left) / scaleBase - (r.width / scaleBase - W) / 2, py = (cy - r.top) / scaleBase - (r.height / scaleBase - H) / 2, nk = clamp(view.k * f, 1, 14), s = nk / view.k; view.x = px - (px - view.x) * s; view.y = py - (py - view.y) * s; view.k = nk; clampView(); applyView(); }
+function puntoMappa(cx, cy) { const r = SVG.getBoundingClientRect(), px = (cx - r.left) / scaleBase - (r.width / scaleBase - W) / 2, py = (cy - r.top) / scaleBase - (r.height / scaleBase - H) / 2; return { x: (px - view.x) / view.k, y: (py - view.y) / view.k }; }
+const raggioPx = a => clamp(5.5 + Math.sqrt(a.n / 1000) * 1.7, 5.5, 17);
+function renderArmate() {
+  const seen = new Set(), ku = 1 / (scaleBase * view.k);
+  for (const a of G.arm) {
+    seen.add(a.id); let g = armEls.get(a.id);
+    if (!g) { g = { c: el('g', {}), ci: el('circle', {}), tx: el('text', { class: 'armtx' }), ln: el('polyline', { fill: 'none', class: 'ordine', stroke: '#ffe08a', 'stroke-width': 1.2, 'stroke-dasharray': '4 3', opacity: .8 }) }; g.c.append(g.ci, g.tx); gArm.appendChild(g.c); gOrd.appendChild(g.ln); armEls.set(a.id, g); }
+    const r = raggioPx(a) * ku, sel = a.id === G.selA, col = F(a.owner).color;
+    g.ci.setAttribute('cx', a.x); g.ci.setAttribute('cy', a.y); g.ci.setAttribute('r', r); g.ci.setAttribute('fill', col); g.ci.setAttribute('stroke', sel ? '#fff' : a.owner === G.me ? '#ffe08a' : '#06121e'); g.ci.setAttribute('stroke-width', (sel ? 2.4 : 1.2) * ku);
+    g.ci.setAttribute('opacity', a.combatte ? 0.6 + 0.4 * Math.abs(Math.sin(performance.now() / 160)) : 1);
+    g.tx.setAttribute('x', a.x); g.tx.setAttribute('y', a.y); g.tx.setAttribute('font-size', clamp(r * 0.95, 2, 9)); g.tx.setAttribute('stroke-width', r * 0.2); g.tx.textContent = nk(a.n);
+    const mov = (Math.hypot(a.tx - a.x, a.ty - a.y) > 1 || a.path.length) && (a.owner === G.me); g.ln.style.display = mov ? '' : 'none'; if (mov) { g.ln.setAttribute('points', [a.x + ',' + a.y, a.tx + ',' + a.ty, ...a.path.map(q => q.x + ',' + q.y)].join(' ')); g.ln.setAttribute('stroke-width', 1.2 * ku); g.ln.setAttribute('stroke-dasharray', `${4 * ku} ${3 * ku}`); }
+  }
+  for (const [id, g] of armEls) if (!seen.has(id)) { g.c.remove(); g.ln.remove(); armEls.delete(id); }
+  // occupazioni in corso
+  gOcc.innerHTML = ''; for (const id of IDS) { const c = C(id); if (!c.occ) continue; const col = F(c.occ.owner).color, cx = c.lx, cy = c.ly, rr = 8 * ku * 1.3; const bg = el('circle', { cx, cy, r: rr, fill: 'rgba(0,0,0,.5)' }); gOcc.appendChild(bg); const ang = c.occ.frac * Math.PI * 2, x2 = cx + rr * Math.sin(ang), y2 = cy - rr * Math.cos(ang); gOcc.appendChild(el('path', { d: `M${cx},${cy} L${cx},${cy - rr} A${rr},${rr} 0 ${ang > Math.PI ? 1 : 0} 1 ${x2},${y2} Z`, fill: col, opacity: .9 })); }
+}
+
+/* ======================= INTERFACCIA ======================= */
+function syncSpeed() { $('speed').innerHTML = `<button data-v="0" class="${G.vel === 0 ? 'on' : ''}">⏸</button>` + [1, 2, 3, 4].map(i => `<button data-v="${i}" class="${G.vel === i ? 'on' : ''}">${['', '1×', '2×', '4×', '8×'][i]}</button>`).join(''); }
+$('stats').onclick = e => { const b = e.target.closest('[data-ui]'); if (!b || G.fase !== 'play') return; G.ui = G.ui === b.dataset.ui ? null : b.dataset.ui; panelDirty = true; renderStats(); };
+$('speed').onclick = e => { const b = e.target.closest('button'); if (!b || G.fase !== 'play') return; G.vel = +b.dataset.v; syncSpeed(); };
+function renderStats() {
+  if (G.fase === 'setup') { $('stats').innerHTML = ''; return; } const me = G.me, inc = income(me), up = upkeep(me), tr = troopsOf(me);
+  const dom = CONT.map(k => `${k.split(' ').map(w => w[0]).join('')} ${Math.round(quota(k) * 100)}%`).join(' · ');
+  $('stats').innerHTML = `<div class="stat"><b>${MESI[mese()]} ${anno()}</b><i>Data</i></div><div class="stat"><b>${money(F(me).money)}</b><i>Tesoro</i></div><div class="stat"><b style="color:${inc - up >= 0 ? '#86e6b4' : '#ff9d9d'}">${inc - up >= 0 ? '+' : ''}${money(inc - up)}/mese</b><i>Bilancio</i></div><div class="stat" data-ui="esercito"><b>${nk(tr)} soldati · ${armiesOf(me).length} armate</b><i>Esercito totale${queueOf(me) ? ' (+' + nk(queueOf(me)) + ' in addestr.)' : ''}</i></div><div class="stat" data-ui="ricerca"><b>${G.res.cur ? TECH[G.res.cur].n + ' ' + (G.res.lv[G.res.cur] + 1) + ' · ' + Math.round(G.res.p[G.res.cur] / TECH[G.res.cur].cost[G.res.lv[G.res.cur]] * 100) + '%' : 'nessuna'}</b><i>Ricerca (+${rpMese(me).toFixed(1).replace('.', ',')}/mese)</i></div><div class="stat"><b>${ownedBy(me).length}</b><i>Paesi</i></div><div class="stat opt" data-ui="obiettivo"><b style="font-size:.78rem">${dom}</b><i>Continenti dominati: ${(G.dom || []).length}/2</i></div>`;
+}
+function statoRel(a, b) { if (a === b) return '<span class="tag me">Nostro</span>'; return inGuerra(a, b) ? '<span class="tag war">In guerra</span>' : '<span class="tag peace">In pace</span>'; }
+function recLoc() { const me = G.me; return G.selC && C(G.selC).owner === me ? G.selC : F(me).cap; }
+const TITOLI = { esercito: '🪖 Esercito', ricerca: '🔬 Ricerca', obiettivo: '🎯 Obiettivo', paese: '🌐 Paese' };
+function renderPanel() {
+  const side = $('side'); if (G.fase === 'setup' || !G.ui) { side.classList.remove('open'); $('panel').innerHTML = ''; renderBar(); return; }
+  const me = G.me, f = F(me); let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>${TITOLI[G.ui]}</b><button class="small ghost" data-act="close">✕</button></div>`;
+  const mode = G.ui;
+  if (mode === 'paese') {
+  const a = G.arm.find(x => x.id === G.selA);
+  if (a) {
+    const c = a.cid ? C(a.cid) : null, mio = a.owner === me;
+    h += `<div class="card"><h3><span class="dot" style="background:${F(a.owner).color}"></span>Armata ${mio ? 'nostra' : 'di ' + fName(a.owner)}</h3><div class="row"><span>Soldati</span><b>${nf(a.n)}</b></div><div class="row"><span>Si trova in</span><b>${c ? c.n : 'mare aperto'}</b></div>`;
+    if (c && c.owner !== a.owner) { const w = inGuerra(a.owner, c.owner); h += `<div class="row"><span>Territorio</span><span>${w ? '<span class="tag war">ostile: logoramento</span>' : (F(a.owner).tr[c.owner] && F(a.owner).tr[c.owner].until > G.t ? '<span class="tag peace">in transito</span>' : '<span class="tag war">senza permesso</span>')}</span></div>`; }
+    if (false) h += `<p class="hint" style="margin-top:6px">Trascina l'armata col mouse per tracciare un percorso, anche curvo; oppure selezionala e clicca la destinazione. Con «Fermati» si arresta: se è in territorio nemico comincia a invadere. Se attraversa paesi in pace potrebbero negarle il transito; nei paesi in guerra con noi si logora.</p><div class="btns"><button class="small ghost" data-act="split" data-v="0.5">Dividi 50%</button><button class="small ghost" data-act="split" data-v="0.25">Dividi 25%</button><button class="small ghost" data-act="stop">Fermati</button><button class="small ghost" data-act="desel">Chiudi</button></div>`; else h += `<div class="btns"><button class="small ghost" data-act="desel">Chiudi</button></div>`;
+    h += '</div>';
+  }
+  const c = G.selC ? C(G.selC) : null;
+  if (c) {
+    const o = c.owner, mio = o === me, mg = maxGarr(c); h += `<div class="card"><h3><span class="dot" style="background:${F(o).color}"></span>${c.n}</h3>`;
+    h += `<div class="row"><span>Continente</span><b>${c.k}</b></div><div class="row"><span>Governo</span><b>${fName(o)}</b></div><div class="row"><span>Rapporti</span>${statoRel(me, o)}</div>`;
+    h += `<div class="row"><span>Popolazione</span><b>${c.pop >= 100 ? nf(c.pop) : c.pop.toFixed(1).replace('.', ',')} mln</b></div><div class="row"><span>PIL</span><b>${money(c.gdp)}</b></div><div class="row"><span>Guarnigione</span><b>${nk(c.garr)} / ${nk(mg)}</b></div>${c.occ ? `<div class="row"><span>Occupato da ${fName(c.occ.owner)}</span><b>${Math.round(c.occ.pct * 100)}% (annessione al ${SOGLIA_OCC * 100}%)</b></div>` : ''}`;
+    if (mio) {
+      h += `<div class="row"><span>Richiamabili</span><b>${nk(c.man)}</b></div>${c.unrest > 0.05 ? `<div class="row"><span>Malcontento</span><b style="color:#ff9d9d">${Math.round(c.unrest * 100)}%</b></div><div class="bar"><i style="width:${c.unrest * 100}%;background:#e05263"></i></div>` : ''}<div class="btns"><button class="small" data-act="openrec">🪖 Arruola qui</button></div>`;
+    } else {
+      const w = inGuerra(me, o), tr = F(me).tr[o], costo = Math.max(2, gdpOf(o) * 0.004);
+      h += `<div class="row"><span>Transito per le nostre armate</span><span>${w ? '—' : tr && tr.until > G.t ? (tr.ok ? `<span class="tag peace">concesso fino al ${MESI[Math.floor(tr.until % 12)]} ${2025 + Math.floor(tr.until / 12)}</span>` : '<span class="tag war">negato</span>') : '<span class="tag">da chiedere</span>'}</span></div><div class="btns">`;
+      if (!w) h += `<button class="small danger" data-act="war">⚔️ Dichiara guerra</button><button class="small ghost" data-act="trans" data-v="${costo}" ${f.money < costo ? 'disabled' : ''}>🤝 Accordo di transito · ${money(costo)}</button>`; else h += `<button class="small good" data-act="pace">🕊️ Chiedi la pace</button>`;
+      h += '</div>';
+      const o2 = G.offers.find(x => x.da === o); if (o2) h += `<div class="btns"><button class="small good" data-act="acceptpace">Accetta la pace offerta</button></div>`;
+    }
+    h += '</div>';
+  }
+  }
+  if (mode === 'esercito') {
+  const loc = recLoc(), lc = C(loc); h += `<div class="card"><h3>🪖 Reclutamento</h3><div class="row"><span>Esercito</span><b>${nf(troopsOf(me))} soldati · ${armiesOf(me).length} armate</b></div><div class="row"><span>In addestramento</span><b>${nf(queueOf(me))}</b></div><div class="row"><span>Richiamabili</span><b>${nk(manpower(me))}</b></div><div class="row"><span>Mantenimento</span><b>${money(upkeep(me))}/mese</b></div><h4>Arruola a ${lc.n}</h4><div class="btns">${[5, 20, 50, 100].map(k => `<button class="small" data-act="rec" data-v="${k}" ${maxArruolabili(me) < k ? 'disabled' : ''}>+${k}k · ${money(k * costK(me))}</button>`).join('')}<button class="small ghost" data-act="rec" data-v="${maxArruolabili(me)}" ${maxArruolabili(me) < 1 ? 'disabled' : ''}>Massimo (${nk(maxArruolabili(me) * 1000)})</button></div><p class="hint" style="margin-top:6px">Le reclute compaiono nel paese scelto dopo ${ADDEST} mesi. Per cambiare luogo, clicca un altro tuo paese sulla mappa e riapri questo riquadro.</p></div>`;
+  h += `<div class="card"><h3>Le tue armate</h3>${armiesOf(me).sort((x, y) => y.n - x.n).slice(0, 30).map(x => `<div class="row"><span>${x.cid ? C(x.cid).n : 'in mare'}</span><button class="small ghost" data-act="selarm" data-v="${x.id}">${nf(x.n)}</button></div>`).join('') || '<p class="hint">Nessuna armata.</p>'}</div>`;
+  const guerre = Object.keys(f.war); h += `<div class="card"><h3>⚔️ Guerre in corso</h3>${guerre.length ? guerre.map(e => `<div class="row"><span>${fName(e)}</span><b>${Math.round(G.t - f.war[e])} mesi · ${nk(troopsOf(e))} sold.</b></div>`).join('') : '<p class="hint">Siamo in pace con tutti.</p>'}${G.offers.map(o => `<div class="row"><span>🕊️ ${fName(o.da)} chiede la pace</span><button class="small good" data-act="acceptoff" data-v="${o.da}">Accetta</button></div>`).join('')}</div>`;
+  }
+  if (mode === 'ricerca') {
+  h += `<div class="card"><h3>🔬 Ricerca</h3><p class="hint">Punti ricerca: +${rpMese(me).toFixed(1).replace('.', ',')} al mese (cresce col PIL).</p>${Object.keys(TECH).map(k => { const T = TECH[k], l = G.res.lv[k], pc = l < 3 ? Math.round(G.res.p[k] / T.cost[l] * 100) : 100; return `<div class="row"><span><b>${T.n}</b> ${l}/3</span>${l >= 3 ? '<span class="tag peace">max</span>' : G.res.cur === k ? `<span class="tag me">in corso ${pc}%</span>` : `<button class="small ghost" data-act="ric" data-k="${k}">Ricerca${pc ? ' (' + pc + '%)' : ''}</button>`}</div><div class="hint" style="margin-bottom:4px">${T.d}</div>`; }).join('')}</div>`;
+  }
+  if (mode === 'obiettivo') {
+  h += `<div class="card"><h3>🎯 Obiettivo: 2 continenti</h3><p class="hint">Domina un continente controllando almeno il ${SOGLIA * 100}% dei suoi paesi.</p>${CONT.map(k => { const q = quota(k), n = contIds[k].filter(id => C(id).owner === me).length; return `<div class="row"><span>${k}</span><b style="${q >= SOGLIA ? 'color:#86e6b4' : ''}">${n}/${contIds[k].length} ${q >= SOGLIA ? '✔' : ''}</b></div><div class="bar"><i style="width:${Math.min(100, q / SOGLIA * 100)}%"></i></div>`; }).join('')}</div>`;
+  }
+  $('panel').innerHTML = h; side.classList.add('open'); renderBar();
+}
+function renderBar() {
+  const bar = $('abar'), a = G.arm.find(x => x.id === G.selA);
+  if (G.fase !== 'play' || !a || a.owner !== G.me) { bar.style.display = 'none'; return; }
+  const c = a.cid ? C(a.cid) : null; bar.style.display = 'flex';
+  bar.innerHTML = `<span style="font-size:.8rem"><b>${nf(a.n)}</b> soldati · ${c ? c.n : 'in mare'}</span><button class="small ghost" data-act="stop">Fermati</button><button class="small ghost" data-act="split" data-v="0.5">Dividi 50%</button><button class="small ghost" data-act="split" data-v="0.25">25%</button><button class="small ghost" data-act="desel">✕</button>`;
+}
+function onAct(e) {
+  const b = e.target.closest('[data-act]'); if (!b || G.fase !== 'play') return; const act = b.dataset.act, v = +b.dataset.v, me = G.me;
+  if (act === 'rec') { recluta(me, v, recLoc()); } else if (act === 'war') { if (G.selC) dichiaraGuerra(me, C(G.selC).owner); } else if (act === 'pace') { const o = C(G.selC).owner; if (proponiPace(me, o)) { } else { log(`${fName(o)} rifiuta la pace per ora.`, 'dip'); avvisa(`${fName(o)} rifiuta la pace`); } }
+  else if (act === 'acceptpace' || act === 'acceptoff') { const o = act === 'acceptoff' ? b.dataset.v : C(G.selC).owner; faiPace(me, o); G.offers = G.offers.filter(x => x.da !== o); }
+  else if (act === 'trans') { const o = C(G.selC).owner, costo = +b.dataset.v; if (F(me).money >= costo) { F(me).money -= costo; chiediTransito(me, o, true); } }
+  else if (act === 'split') { const a = G.arm.find(x => x.id === G.selA); if (a) { const n = dividiArmata(a, v); if (n) G.selA = n.id; else avvisa('Armata troppo piccola per dividerla'); } }
+  else if (act === 'stop') { const a = G.arm.find(x => x.id === G.selA); if (a) { a.tx = a.x; a.ty = a.y; a.path = []; } } else if (act === 'ric') { const k = b.dataset.k; if (G.res.lv[k] < 3) G.res.cur = k; }
+  else if (act === 'desel') { G.selA = null; SVG.classList.remove('armata'); } else if (act === 'close') { G.ui = null; } else if (act === 'askwar') { if (G.ask) dichiaraGuerra(me, C(G.ask).owner); nascondiAsk(); } else if (act === 'askno') { nascondiAsk(); } else if (act === 'openrec') { G.ui = 'esercito'; } else if (act === 'selarm') { const q = G.arm.find(x => x.id === v); if (q) { G.selA = q.id; if (q.cid) G.selC = q.cid; paintMap(); } }
+  panelDirty = true;
+}
+$('panel').onclick = onAct; $('ask').onclick = onAct; $('abar').onclick = onAct;
+function renderLog() { $('log').innerHTML = G.log.slice(0, 6).map(l => `<div class="${l.cls}">${MESI[l.m]} ${l.a}: ${l.txt}</div>`).join(''); }
+
+/* ======================= INPUT ======================= */
+let drag = null;
+const prev = el('polyline', { fill: 'none', stroke: '#fff', opacity: .95, 'pointer-events': 'none' }); gOrd.appendChild(prev); prev.style.display = 'none';
+function armataMia(p) { const ku = 1 / (scaleBase * view.k); let hit = null, bd = 1e9; for (const a of G.arm) { if (a.owner !== G.me) continue; const d = Math.hypot(a.x - p.x, a.y - p.y); if (d < raggioPx(a) * ku * 1.25 && d < bd) { bd = d; hit = a; } } return hit; }
+SVG.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false }; SVG.setPointerCapture(e.pointerId);
+  if (G.fase === 'play' && e.button === 0) { const p = puntoMappa(e.clientX, e.clientY), a = armataMia(p); if (a) { drag.army = a; drag.pts = [{ x: a.x, y: a.y }]; } }
+});
+SVG.addEventListener('pointermove', e => {
+  if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 5) drag.moved = true;
+    if (drag.army && drag.moved) { const q = puntoMappa(e.clientX, e.clientY), l = drag.pts[drag.pts.length - 1]; if (Math.hypot(q.x - l.x, q.y - l.y) > 2.2 / view.k) drag.pts.push(q); const ku = 1 / (scaleBase * view.k); prev.style.display = ''; prev.setAttribute('points', drag.pts.map(t => t.x + ',' + t.y).join(' ')); prev.setAttribute('stroke-width', 1.6 * ku); prev.setAttribute('stroke-dasharray', `${4 * ku} ${3 * ku}`); }
+    else if (drag.moved) { view.x = drag.vx + dx / scaleBase; view.y = drag.vy + dy / scaleBase; clampView(); applyView(); } }
+  const p = puntoMappa(e.clientX, e.clientY), id = countryAt(p.x, p.y), tip = $('tip');
+  if (id && G.fase === 'play') { const c = C(id), r = $('mapwrap').getBoundingClientRect(); tip.innerHTML = `<b>${c.n}</b> · ${fName(c.owner)}<br>${c.k} · guarnigione ${nk(c.garr)}`; tip.style.left = Math.min(e.clientX - r.left + 14, r.width - 170) + 'px'; tip.style.top = (e.clientY - r.top + 14) + 'px'; tip.style.opacity = 1; } else tip.style.opacity = 0;
+});
+SVG.addEventListener('pointerleave', () => { $('tip').style.opacity = 0; });
+SVG.addEventListener('pointerup', e => { const d = drag; drag = null; prev.style.display = 'none'; if (d && d.army && d.moved && G.fase === 'play') { const q = puntoMappa(e.clientX, e.clientY); d.pts.push(q); G.selA = d.army.id; ordinaPercorso(d.army, d.pts.slice(1)); const id = countryAt(q.x, q.y); if (id) G.selC = id; SVG.classList.add('armata'); selez(); return; } if (!d || d.moved || G.fase !== 'play') return; clickMappa(e.clientX, e.clientY, e.button === 2); });
+SVG.addEventListener('contextmenu', e => { e.preventDefault(); if (G.fase === 'play') clickMappa(e.clientX, e.clientY, true); });
+SVG.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.2 : 1 / 1.2); }, { passive: false });
+function chiediGuerra(id) { const c = C(id), o = c.owner; G.ask = id; const a = $('ask'); a.innerHTML = `<b>Dichiarare guerra a ${fName(o)}?</b><div class="hint" style="margin:4px 0 8px">${c.n} · guarnigione ${nk(c.garr)} · esercito ${nk(troopsOf(o))}.<br>L'armata resta dov'è: dopo la dichiarazione potrai mandarla.</div><div class="btns" style="margin-top:0"><button class="small danger" data-act="askwar">⚔️ Dichiara guerra</button><button class="small ghost" data-act="askno">Annulla</button></div>`; a.style.display = 'block'; }
+function nascondiAsk() { G.ask = null; $('ask').style.display = 'none'; }
+function clickMappa(cx, cy, destro) {
+  if (G.ask) nascondiAsk();
+  const p = puntoMappa(cx, cy), ku = 1 / (scaleBase * view.k); let hit = null, bd = 1e9;
+  for (const a of G.arm) { const d = Math.hypot(a.x - p.x, a.y - p.y); if (d < raggioPx(a) * ku * 1.25 && d < bd) { bd = d; hit = a; } }
+  const sel = G.arm.find(a => a.id === G.selA);
+  if (hit && !destro && (!sel || hit.id !== sel.id || true)) { G.selA = hit.id; if (hit.cid) G.selC = hit.cid; if (hit.owner !== G.me) G.ui = 'paese'; SVG.classList.toggle('armata', hit.owner === G.me); selez(); return; }
+  if (sel && sel.owner === G.me) { const id = countryAt(p.x, p.y); if (id) { G.selC = id; const o = C(id).owner; if (o !== G.me && !inGuerra(G.me, o)) { chiediGuerra(id); selez(); return; } selez(); } ordina(sel, p.x, p.y); panelDirty = true; return; }
+  const id = countryAt(p.x, p.y); if (id) { G.selC = id; G.selA = null; G.ui = 'paese'; SVG.classList.remove('armata'); selez(); } else if (G.ui === 'paese') { G.ui = null; G.selA = null; selez(); }
+}
+function selez() { paintMap(); panelDirty = true; renderArmate(); }
+$('zIn').onclick = () => { const r = SVG.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.4); }; $('zOut').onclick = () => { const r = SVG.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / 1.4); };
+$('zReset').onclick = () => { view = { x: 0, y: 0, k: 1 }; clampView(); applyView(); };
+addEventListener('keydown', e => { if (G.fase !== 'play') return; if (e.code === 'Space') { e.preventDefault(); G.vel = G.vel ? 0 : 1; syncSpeed(); } else if (e.code === 'Escape') { G.ui = null; G.selA = null; SVG.classList.remove('armata'); panelDirty = true; } else if ('12345'.includes(e.key)) { G.vel = +e.key - 1; syncSpeed(); } });
+addEventListener('resize', () => { resizeMap(); clampView(); applyView(); });
+
+/* ======================= MENU INIZIALE ======================= */
+let scelto = null, diffScelta = 'normale';
+function menuIniziale() {
+  G.fase = 'setup'; G.vel = 0; syncSpeed(); const ord = [...M.c].sort((a, b) => b.gdp - a.gdp); scelto = scelto || 'ITA';
+  $('modal').innerHTML = `<h2>🌍 Dominio Mondiale</h2><p>Guida un paese alla conquista del mondo. È un gioco <b>solo militare</b>: niente colpi di stato, solo eserciti.</p><ul><li><b>Recluta</b> truppe in qualunque tuo paese: costano denaro e richiamabili.</li><li>Le <b>armate vanno ovunque</b>, anche via mare. Clicca un'armata, poi la destinazione.</li><li>Attraversare un paese in pace richiede il <b>permesso di transito</b>: possono <b>negarlo</b>. Puoi comprarlo con un accordo.</li><li>Nei paesi <b>in guerra</b> con te le armate si <b>logorano</b>. Dichiara guerra per invadere.</li><li>I paesi conquistati si <b>ribellano</b> se non li presidi. Se diventi troppo grande, si forma una <b>coalizione</b>.</li><li><b>Vinci</b> dominando <b>2 continenti</b> (almeno il ${SOGLIA * 100}% dei loro paesi).</li></ul><b>Scegli il tuo paese</b><div class="pick" id="pick">${ord.map(c => `<button data-id="${c.id}" class="${c.id === scelto ? 'sel' : ''}">${c.n}<small>${c.k} · PIL ${money(c.gdp)}</small></button>`).join('')}</div><b>Difficoltà</b><div class="diffs" id="diffs">${Object.keys(DIFFS).map(k => `<button data-d="${k}" class="${k === diffScelta ? 'sel' : ''}">${DIFFS[k].lab}</button>`).join('')}</div><div class="btns"><button id="bStart">Inizia la conquista</button></div><p class="hint" style="margin-top:10px">Mappa: © Natural Earth (pubblico dominio). Ispirato a Dummynation.</p>`;
+  $('overlay').classList.remove('hidden');
+  $('pick').onclick = e => { const b = e.target.closest('button'); if (!b) return; scelto = b.dataset.id; $('pick').querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b)); };
+  $('diffs').onclick = e => { const b = e.target.closest('button'); if (!b) return; diffScelta = b.dataset.d; $('diffs').querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b)); };
+  $('bStart').onclick = () => { startGame(scelto, diffScelta); view = { x: 0, y: 0, k: 1 }; G.vel = 1; syncSpeed(); resizeMap(); clampView(); applyView(); };
+}
+
+/* ======================= CICLO PRINCIPALE ======================= */
+let last = performance.now(), uiT = 0;
+function loop(now) {
+  if (bordDirty) reorderPaths();
+  if (occDirty && now - (loop.lo || 0) > 250) { loop.lo = now; drawOcc(); }
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (G.fase === 'play' && G.vel > 0) { const dtM = dt * 1000 / MS_MESE * VELS[G.vel], n = Math.max(1, Math.ceil(dtM / 0.05)); for (let i = 0; i < n; i++) tick(dtM / n); }
+  if (G.fase === 'play' || G.fase === 'fine') { renderArmate(); uiT -= dt; if (uiT <= 0 || panelDirty || logDirty) { uiT = 0.3; renderStats(); if (panelDirty) { renderPanel(); panelDirty = false; } if (logDirty) { renderLog(); logDirty = false; } } }
+  requestAnimationFrame(loop);
+}
+buildMapOnce();
+function buildMapOnce() { G.C = {}; G.F = {}; M.c.forEach((c, i) => { G.C[c.id] = { id: c.id, n: c.n, k: c.k, owner: c.id, garr: 0, unrest: 0, occ: null, pop: c.pop, gdp: c.gdp, nb: c.nb, lx: c.lx, ly: c.ly, man: 0 }; G.F[c.id] = { id: c.id, color: '#3a5a7a', war: {}, tr: {}, rel: {}, queue: [], cap: c.id, alive: true }; }); buildMap(); paintMap(); resizeMap(); }
+syncSpeed(); menuIniziale(); requestAnimationFrame(loop);
+window.__dm = { paintMap, G, tick, startGame, creaArmata, ordina, dichiaraGuerra, faiPace, chiediTransito, countryAt, C, F, ownedBy, income, troopsOf, recluta, controllaVittoria, rivolta, view: () => view, clickMappa };
+</script>
+</body>
+</html>
