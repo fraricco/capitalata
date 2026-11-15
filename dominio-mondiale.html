@@ -21,14 +21,17 @@
   .stats { display: flex; gap: 16px; flex: 1; flex-wrap: wrap; align-items: center; }
   .stat { display: flex; flex-direction: column; line-height: 1.15; } .stat b { font-size: 0.98rem; } .stat i { font-style: normal; opacity: .6; font-size: .65rem; text-transform: uppercase; letter-spacing: .04em; }
   .speed { display: flex; gap: 4px; } .speed button { padding: 6px 10px; min-width: 38px; font-size: .82rem; background: rgba(255,255,255,0.1); color: var(--text); border: 1px solid var(--border); } .speed button.on { background: var(--gold); color: #10233a; }
-  main { flex: 1; display: flex; min-height: 0; }
-  .mapwrap { flex: 1; position: relative; background: radial-gradient(ellipse at center, #123352 0%, var(--ocean) 100%); overflow: hidden; touch-action: none; }
+  main { flex: 1; display: flex; min-height: 0; position: relative; }
+  .mapwrap { flex: 1; position: relative; /*mappa a tutto schermo*/ background: radial-gradient(ellipse at center, #123352 0%, var(--ocean) 100%); overflow: hidden; touch-action: none; }
   svg#map { width: 100%; height: 100%; display: block; cursor: grab; user-select: none; }
   svg#map.armata { cursor: crosshair; }
-  .side { width: 340px; flex: 0 0 340px; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: rgba(0,0,0,0.22); min-height: 0; }
+  .side { position: absolute; right: 0; top: 0; bottom: 0; width: 340px; max-width: 94%; display: none; flex-direction: column; border-left: 1px solid var(--border); background: rgba(8,20,34,.95); z-index: 8; }
+  .side.open { display: flex; }
   .side .scroll { flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
-  .log { flex: 0 0 190px; overflow-y: auto; border-top: 1px solid var(--border); padding: 8px 12px; font-size: .78rem; line-height: 1.45; background: rgba(0,0,0,.25); }
+  .log { position: absolute; left: 10px; bottom: 10px; width: min(380px, 70%); max-height: 130px; overflow: hidden; padding: 6px 10px; font-size: .76rem; line-height: 1.4; background: rgba(8,20,34,.72); border: 1px solid var(--border); border-radius: 8px; pointer-events: none; }
   .log div { padding: 1px 0; opacity: .85; } .log .big { color: #ffd27d; font-weight: 700; opacity: 1; } .log .bad { color: #ff9d9d; opacity: 1; } .log .good { color: #86e6b4; opacity: 1; } .log .dip { color: #9fd4ff; }
+  .abar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); align-items: center; gap: 8px; background: rgba(8,20,34,.95); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; z-index: 7; white-space: nowrap; }
+  .stat[data-ui] { cursor: pointer; padding: 4px 9px; border: 1px solid var(--border); border-radius: 8px; background: rgba(255,255,255,.06); } .stat[data-ui]:hover { background: rgba(255,255,255,.14); } .stat[data-ui].on { border-color: var(--gold); }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
   .card h3 { font-size: 1rem; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; } .card h4 { font-size: .8rem; opacity: .75; margin: 8px 0 4px; text-transform: uppercase; letter-spacing: .04em; }
   .row { display: flex; justify-content: space-between; font-size: .85rem; padding: 2px 0; } .row span:first-child { opacity: .7; }
@@ -50,7 +53,7 @@
   .path { stroke: #06121e; stroke-width: .35; stroke-linejoin: round; cursor: pointer; } .path:hover { filter: brightness(1.22); } .path.sel { stroke: #fff; stroke-width: 1.2; } .path.mine { stroke: #ffd27d; stroke-width: .6; }
   .lbl { font-weight: 700; fill: rgba(255,255,255,.88); text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: rgba(0,0,0,.6); }
   .armtx { font-weight: 800; fill: #fff; text-anchor: middle; dominant-baseline: central; pointer-events: none; paint-order: stroke; stroke: rgba(0,0,0,.7); }
-  @media (max-width: 900px) { body { overflow: auto; } main { flex-direction: column; } .mapwrap { height: 55vh; flex: none; } .side { width: 100%; flex: none; border-left: none; border-top: 1px solid var(--border); } .side .scroll { max-height: none; } .log { flex: none; height: 150px; } .stat.opt { display: none; } }
+  @media (max-width: 900px) { .stat.opt { display: none; } .log { width: 60%; max-height: 90px; } }
 </style>
 </head>
 <body>
@@ -64,9 +67,9 @@
   <div class="mapwrap" id="mapwrap">
     <svg id="map" preserveAspectRatio="xMidYMid meet"><g id="cam"><g id="gC"></g><g id="gOcc"></g><g id="gLbl"></g><g id="gOrd"></g><g id="gArm"></g></g></svg>
     <div class="zoombox"><button id="zIn">+</button><button id="zOut">&minus;</button><button id="zReset">⌂</button></div>
-    <div class="tip" id="tip"></div><div class="toast" id="toast"></div>
+    <div class="log" id="log"></div><div class="abar" id="abar" style="display:none"></div><div class="tip" id="tip"></div><div class="toast" id="toast"></div>
   </div>
-  <aside class="side"><div class="scroll" id="panel"></div><div class="log" id="log"></div></aside>
+  <aside class="side" id="side"><div class="scroll" id="panel"></div></aside>
 </main>
 <div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
 
@@ -117,7 +120,7 @@ const GRW = Math.ceil(W), GRH = Math.ceil(H), GRID = new Int16Array(GRW * GRH).f
 function countryAt(x, y) { const ix = Math.floor(x), iy = Math.floor(y); if (ix < 0 || iy < 0 || ix >= GRW || iy >= GRH) return null; const v = GRID[iy * GRW + ix]; return v < 0 ? null : IDS[v]; }
 
 /* ======================= STATO ======================= */
-const G = { fase: 'setup', diff: 'normale', t: 0, vel: 1, me: null, C: {}, F: {}, arm: [], seq: 1, selC: null, selA: null, log: [], offers: [], own: {}, ownDirty: true, vittoria: null, threat: 0, lastCoal: 0, res: null };
+const G = { fase: 'setup', diff: 'normale', t: 0, vel: 1, me: null, C: {}, F: {}, arm: [], seq: 1, selC: null, selA: null, log: [], offers: [], own: {}, ownDirty: true, vittoria: null, threat: 0, lastCoal: 0, res: null, ui: null };
 const newRes = () => ({ lv: { arm: 0, log: 0, eco: 0, dip: 0 }, p: { arm: 0, log: 0, eco: 0, dip: 0 }, cur: null });
 G.res = newRes();
 const TECH = { arm: { n: 'Armamenti', d: '+12% di forza in combattimento per livello', cost: [12, 30, 70] }, log: { n: 'Logistica', d: '−25% logoramento in territorio ostile e +10% velocità per livello', cost: [10, 25, 60] }, eco: { n: 'Economia di guerra', d: '−10% costo delle reclute per livello', cost: [8, 22, 55] }, dip: { n: 'Diplomazia', d: '+8% probabilità di ottenere il transito per livello', cost: [8, 20, 50] } };
@@ -187,7 +190,7 @@ function proponiPace(a, b) {   // a propone a b
 /* ======================= AVVIO PARTITA ======================= */
 function palette(i) { return `hsl(${Math.round((i * 137.508) % 360)},52%,${44 + (i % 3) * 4}%)`; }
 function startGame(pid, diff) {
-  Object.assign(G, { fase: 'play', diff, t: 0, vel: 1, me: pid, C: {}, F: {}, arm: [], seq: 1, selC: pid, selA: null, log: [], offers: [], own: {}, ownDirty: true, vittoria: null, threat: 0, lastCoal: 0, res: newRes() });
+  Object.assign(G, { fase: 'play', diff, t: 0, vel: 1, me: pid, C: {}, F: {}, arm: [], seq: 1, selC: pid, selA: null, log: [], offers: [], own: {}, ownDirty: true, vittoria: null, threat: 0, lastCoal: 0, res: newRes(), ui: null });
   const D = DIFFS[diff];
   M.c.forEach((c, i) => {
     const rc = { id: c.id, n: c.n, k: c.k, pop: c.pop, gdp: c.gdp, gdp0: c.gdp, lx: c.lx, ly: c.ly, nb: c.nb, owner: c.id, unrest: 0, occ: null, man: 0, maxMan: c.pop * 1e6 * MAN_FRAC, garr: 0 };
@@ -432,21 +435,27 @@ function renderArmate() {
 
 /* ======================= INTERFACCIA ======================= */
 function syncSpeed() { $('speed').innerHTML = `<button data-v="0" class="${G.vel === 0 ? 'on' : ''}">⏸</button>` + [1, 2, 3, 4].map(i => `<button data-v="${i}" class="${G.vel === i ? 'on' : ''}">${['', '1×', '2×', '4×', '8×'][i]}</button>`).join(''); }
+$('stats').onclick = e => { const b = e.target.closest('[data-ui]'); if (!b || G.fase !== 'play') return; G.ui = G.ui === b.dataset.ui ? null : b.dataset.ui; panelDirty = true; renderStats(); };
 $('speed').onclick = e => { const b = e.target.closest('button'); if (!b || G.fase !== 'play') return; G.vel = +b.dataset.v; syncSpeed(); };
 function renderStats() {
   if (G.fase === 'setup') { $('stats').innerHTML = ''; return; } const me = G.me, inc = income(me), up = upkeep(me), tr = troopsOf(me);
   const dom = CONT.map(k => `${k.split(' ').map(w => w[0]).join('')} ${Math.round(quota(k) * 100)}%`).join(' · ');
-  $('stats').innerHTML = `<div class="stat"><b>${MESI[mese()]} ${anno()}</b><i>Data</i></div><div class="stat"><b>${money(F(me).money)}</b><i>Tesoro</i></div><div class="stat"><b style="color:${inc - up >= 0 ? '#86e6b4' : '#ff9d9d'}">${inc - up >= 0 ? '+' : ''}${money(inc - up)}/mese</b><i>Bilancio</i></div><div class="stat"><b>${nk(tr)} soldati · ${armiesOf(me).length} armate</b><i>Esercito totale${queueOf(me) ? ' (+' + nk(queueOf(me)) + ' in addestr.)' : ''}</i></div><div class="stat"><b>${G.res.cur ? TECH[G.res.cur].n + ' ' + (G.res.lv[G.res.cur] + 1) + ' · ' + Math.round(G.res.p[G.res.cur] / TECH[G.res.cur].cost[G.res.lv[G.res.cur]] * 100) + '%' : 'nessuna'}</b><i>Ricerca (+${rpMese(me).toFixed(1).replace('.', ',')}/mese)</i></div><div class="stat"><b>${ownedBy(me).length}</b><i>Paesi</i></div><div class="stat opt"><b style="font-size:.78rem">${dom}</b><i>Continenti dominati: ${(G.dom || []).length}/2</i></div>`;
+  $('stats').innerHTML = `<div class="stat"><b>${MESI[mese()]} ${anno()}</b><i>Data</i></div><div class="stat"><b>${money(F(me).money)}</b><i>Tesoro</i></div><div class="stat"><b style="color:${inc - up >= 0 ? '#86e6b4' : '#ff9d9d'}">${inc - up >= 0 ? '+' : ''}${money(inc - up)}/mese</b><i>Bilancio</i></div><div class="stat" data-ui="esercito"><b>${nk(tr)} soldati · ${armiesOf(me).length} armate</b><i>Esercito totale${queueOf(me) ? ' (+' + nk(queueOf(me)) + ' in addestr.)' : ''}</i></div><div class="stat" data-ui="ricerca"><b>${G.res.cur ? TECH[G.res.cur].n + ' ' + (G.res.lv[G.res.cur] + 1) + ' · ' + Math.round(G.res.p[G.res.cur] / TECH[G.res.cur].cost[G.res.lv[G.res.cur]] * 100) + '%' : 'nessuna'}</b><i>Ricerca (+${rpMese(me).toFixed(1).replace('.', ',')}/mese)</i></div><div class="stat"><b>${ownedBy(me).length}</b><i>Paesi</i></div><div class="stat opt" data-ui="obiettivo"><b style="font-size:.78rem">${dom}</b><i>Continenti dominati: ${(G.dom || []).length}/2</i></div>`;
 }
 function statoRel(a, b) { if (a === b) return '<span class="tag me">Nostro</span>'; return inGuerra(a, b) ? '<span class="tag war">In guerra</span>' : '<span class="tag peace">In pace</span>'; }
+function recLoc() { const me = G.me; return G.selC && C(G.selC).owner === me ? G.selC : F(me).cap; }
+const TITOLI = { esercito: '🪖 Esercito', ricerca: '🔬 Ricerca', obiettivo: '🎯 Obiettivo', paese: '🌐 Paese' };
 function renderPanel() {
-  if (G.fase === 'setup') { $('panel').innerHTML = ''; return; } const me = G.me, f = F(me); let h = '';
+  const side = $('side'); if (G.fase === 'setup' || !G.ui) { side.classList.remove('open'); $('panel').innerHTML = ''; renderBar(); return; }
+  const me = G.me, f = F(me); let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>${TITOLI[G.ui]}</b><button class="small ghost" data-act="close">✕</button></div>`;
+  const mode = G.ui;
+  if (mode === 'paese') {
   const a = G.arm.find(x => x.id === G.selA);
   if (a) {
     const c = a.cid ? C(a.cid) : null, mio = a.owner === me;
     h += `<div class="card"><h3><span class="dot" style="background:${F(a.owner).color}"></span>Armata ${mio ? 'nostra' : 'di ' + fName(a.owner)}</h3><div class="row"><span>Soldati</span><b>${nf(a.n)}</b></div><div class="row"><span>Si trova in</span><b>${c ? c.n : 'mare aperto'}</b></div>`;
     if (c && c.owner !== a.owner) { const w = inGuerra(a.owner, c.owner); h += `<div class="row"><span>Territorio</span><span>${w ? '<span class="tag war">ostile: logoramento</span>' : (F(a.owner).tr[c.owner] && F(a.owner).tr[c.owner].until > G.t ? '<span class="tag peace">in transito</span>' : '<span class="tag war">senza permesso</span>')}</span></div>`; }
-    if (mio) h += `<p class="hint" style="margin-top:6px">Trascina l'armata col mouse per tracciare un percorso, anche curvo; oppure selezionala e clicca la destinazione. Con «Fermati» si arresta: se è in territorio nemico comincia a invadere. Se attraversa paesi in pace potrebbero negarle il transito; nei paesi in guerra con noi si logora.</p><div class="btns"><button class="small ghost" data-act="split" data-v="0.5">Dividi 50%</button><button class="small ghost" data-act="split" data-v="0.25">Dividi 25%</button><button class="small ghost" data-act="stop">Fermati</button><button class="small ghost" data-act="desel">Chiudi</button></div>`; else h += `<div class="btns"><button class="small ghost" data-act="desel">Chiudi</button></div>`;
+    if (false) h += `<p class="hint" style="margin-top:6px">Trascina l'armata col mouse per tracciare un percorso, anche curvo; oppure selezionala e clicca la destinazione. Con «Fermati» si arresta: se è in territorio nemico comincia a invadere. Se attraversa paesi in pace potrebbero negarle il transito; nei paesi in guerra con noi si logora.</p><div class="btns"><button class="small ghost" data-act="split" data-v="0.5">Dividi 50%</button><button class="small ghost" data-act="split" data-v="0.25">Dividi 25%</button><button class="small ghost" data-act="stop">Fermati</button><button class="small ghost" data-act="desel">Chiudi</button></div>`; else h += `<div class="btns"><button class="small ghost" data-act="desel">Chiudi</button></div>`;
     h += '</div>';
   }
   const c = G.selC ? C(G.selC) : null;
@@ -455,7 +464,7 @@ function renderPanel() {
     h += `<div class="row"><span>Continente</span><b>${c.k}</b></div><div class="row"><span>Governo</span><b>${fName(o)}</b></div><div class="row"><span>Rapporti</span>${statoRel(me, o)}</div>`;
     h += `<div class="row"><span>Popolazione</span><b>${c.pop >= 100 ? nf(c.pop) : c.pop.toFixed(1).replace('.', ',')} mln</b></div><div class="row"><span>PIL</span><b>${money(c.gdp)}</b></div><div class="row"><span>Guarnigione</span><b>${nk(c.garr)} / ${nk(mg)}</b></div>`;
     if (mio) {
-      h += `<div class="row"><span>Richiamabili</span><b>${nk(c.man)}</b></div>${c.unrest > 0.05 ? `<div class="row"><span>Malcontento</span><b style="color:#ff9d9d">${Math.round(c.unrest * 100)}%</b></div><div class="bar"><i style="width:${c.unrest * 100}%;background:#e05263"></i></div>` : ''}<h4>Arruola truppe (nuove reclute qui)</h4><div class="btns">${[5, 20, 50, 100].map(k => `<button class="small" data-act="rec" data-v="${k}" ${maxArruolabili(me) < k ? 'disabled' : ''}>+${k}k · ${money(k * costK(me))}</button>`).join('')}<button class="small ghost" data-act="rec" data-v="${maxArruolabili(me)}" ${maxArruolabili(me) < 1 ? 'disabled' : ''}>Massimo (${nk(maxArruolabili(me) * 1000)})</button></div><p class="hint" style="margin-top:6px">Addestramento: ${ADDEST} mesi. Richiamabili totali: ${nk(manpower(me))}.</p>`;
+      h += `<div class="row"><span>Richiamabili</span><b>${nk(c.man)}</b></div>${c.unrest > 0.05 ? `<div class="row"><span>Malcontento</span><b style="color:#ff9d9d">${Math.round(c.unrest * 100)}%</b></div><div class="bar"><i style="width:${c.unrest * 100}%;background:#e05263"></i></div>` : ''}<div class="btns"><button class="small" data-act="openrec">🪖 Arruola qui</button></div>`;
     } else {
       const w = inGuerra(me, o), tr = F(me).tr[o], costo = Math.max(2, gdpOf(o) * 0.004);
       h += `<div class="row"><span>Transito per le nostre armate</span><span>${w ? '—' : tr && tr.until > G.t ? (tr.ok ? `<span class="tag peace">concesso fino al ${MESI[Math.floor(tr.until % 12)]} ${2025 + Math.floor(tr.until / 12)}</span>` : '<span class="tag war">negato</span>') : '<span class="tag">da chiedere</span>'}</span></div><div class="btns">`;
@@ -465,22 +474,38 @@ function renderPanel() {
     }
     h += '</div>';
   }
+  }
+  if (mode === 'esercito') {
+  const loc = recLoc(), lc = C(loc); h += `<div class="card"><h3>🪖 Reclutamento</h3><div class="row"><span>Esercito</span><b>${nf(troopsOf(me))} soldati · ${armiesOf(me).length} armate</b></div><div class="row"><span>In addestramento</span><b>${nf(queueOf(me))}</b></div><div class="row"><span>Richiamabili</span><b>${nk(manpower(me))}</b></div><div class="row"><span>Mantenimento</span><b>${money(upkeep(me))}/mese</b></div><h4>Arruola a ${lc.n}</h4><div class="btns">${[5, 20, 50, 100].map(k => `<button class="small" data-act="rec" data-v="${k}" ${maxArruolabili(me) < k ? 'disabled' : ''}>+${k}k · ${money(k * costK(me))}</button>`).join('')}<button class="small ghost" data-act="rec" data-v="${maxArruolabili(me)}" ${maxArruolabili(me) < 1 ? 'disabled' : ''}>Massimo (${nk(maxArruolabili(me) * 1000)})</button></div><p class="hint" style="margin-top:6px">Le reclute compaiono nel paese scelto dopo ${ADDEST} mesi. Per cambiare luogo, clicca un altro tuo paese sulla mappa e riapri questo riquadro.</p></div>`;
+  h += `<div class="card"><h3>Le tue armate</h3>${armiesOf(me).sort((x, y) => y.n - x.n).slice(0, 30).map(x => `<div class="row"><span>${x.cid ? C(x.cid).n : 'in mare'}</span><button class="small ghost" data-act="selarm" data-v="${x.id}">${nf(x.n)}</button></div>`).join('') || '<p class="hint">Nessuna armata.</p>'}</div>`;
   const guerre = Object.keys(f.war); h += `<div class="card"><h3>⚔️ Guerre in corso</h3>${guerre.length ? guerre.map(e => `<div class="row"><span>${fName(e)}</span><b>${Math.round(G.t - f.war[e])} mesi · ${nk(troopsOf(e))} sold.</b></div>`).join('') : '<p class="hint">Siamo in pace con tutti.</p>'}${G.offers.map(o => `<div class="row"><span>🕊️ ${fName(o.da)} chiede la pace</span><button class="small good" data-act="acceptoff" data-v="${o.da}">Accetta</button></div>`).join('')}</div>`;
+  }
+  if (mode === 'ricerca') {
   h += `<div class="card"><h3>🔬 Ricerca</h3><p class="hint">Punti ricerca: +${rpMese(me).toFixed(1).replace('.', ',')} al mese (cresce col PIL).</p>${Object.keys(TECH).map(k => { const T = TECH[k], l = G.res.lv[k], pc = l < 3 ? Math.round(G.res.p[k] / T.cost[l] * 100) : 100; return `<div class="row"><span><b>${T.n}</b> ${l}/3</span>${l >= 3 ? '<span class="tag peace">max</span>' : G.res.cur === k ? `<span class="tag me">in corso ${pc}%</span>` : `<button class="small ghost" data-act="ric" data-k="${k}">Ricerca${pc ? ' (' + pc + '%)' : ''}</button>`}</div><div class="hint" style="margin-bottom:4px">${T.d}</div>`; }).join('')}</div>`;
+  }
+  if (mode === 'obiettivo') {
   h += `<div class="card"><h3>🎯 Obiettivo: 2 continenti</h3><p class="hint">Domina un continente controllando almeno il ${SOGLIA * 100}% dei suoi paesi.</p>${CONT.map(k => { const q = quota(k), n = contIds[k].filter(id => C(id).owner === me).length; return `<div class="row"><span>${k}</span><b style="${q >= SOGLIA ? 'color:#86e6b4' : ''}">${n}/${contIds[k].length} ${q >= SOGLIA ? '✔' : ''}</b></div><div class="bar"><i style="width:${Math.min(100, q / SOGLIA * 100)}%"></i></div>`; }).join('')}</div>`;
-  $('panel').innerHTML = h;
+  }
+  $('panel').innerHTML = h; side.classList.add('open'); renderBar();
 }
-$('panel').onclick = e => {
+function renderBar() {
+  const bar = $('abar'), a = G.arm.find(x => x.id === G.selA);
+  if (G.fase !== 'play' || !a || a.owner !== G.me) { bar.style.display = 'none'; return; }
+  const c = a.cid ? C(a.cid) : null; bar.style.display = 'flex';
+  bar.innerHTML = `<span style="font-size:.8rem"><b>${nf(a.n)}</b> soldati · ${c ? c.n : 'in mare'}</span><button class="small ghost" data-act="stop">Fermati</button><button class="small ghost" data-act="split" data-v="0.5">Dividi 50%</button><button class="small ghost" data-act="split" data-v="0.25">25%</button><button class="small ghost" data-act="desel">✕</button>`;
+}
+function onAct(e) {
   const b = e.target.closest('[data-act]'); if (!b || G.fase !== 'play') return; const act = b.dataset.act, v = +b.dataset.v, me = G.me;
-  if (act === 'rec') { recluta(me, v, G.selC); } else if (act === 'war') { if (G.selC) dichiaraGuerra(me, C(G.selC).owner); } else if (act === 'pace') { const o = C(G.selC).owner; if (proponiPace(me, o)) { } else { log(`${fName(o)} rifiuta la pace per ora.`, 'dip'); avvisa(`${fName(o)} rifiuta la pace`); } }
+  if (act === 'rec') { recluta(me, v, recLoc()); } else if (act === 'war') { if (G.selC) dichiaraGuerra(me, C(G.selC).owner); } else if (act === 'pace') { const o = C(G.selC).owner; if (proponiPace(me, o)) { } else { log(`${fName(o)} rifiuta la pace per ora.`, 'dip'); avvisa(`${fName(o)} rifiuta la pace`); } }
   else if (act === 'acceptpace' || act === 'acceptoff') { const o = act === 'acceptoff' ? b.dataset.v : C(G.selC).owner; faiPace(me, o); G.offers = G.offers.filter(x => x.da !== o); }
   else if (act === 'trans') { const o = C(G.selC).owner, costo = +b.dataset.v; if (F(me).money >= costo) { F(me).money -= costo; chiediTransito(me, o, true); } }
   else if (act === 'split') { const a = G.arm.find(x => x.id === G.selA); if (a) { const n = dividiArmata(a, v); if (n) G.selA = n.id; else avvisa('Armata troppo piccola per dividerla'); } }
   else if (act === 'stop') { const a = G.arm.find(x => x.id === G.selA); if (a) { a.tx = a.x; a.ty = a.y; a.path = []; } } else if (act === 'ric') { const k = b.dataset.k; if (G.res.lv[k] < 3) G.res.cur = k; }
-  else if (act === 'desel') { G.selA = null; SVG.classList.remove('armata'); }
+  else if (act === 'desel') { G.selA = null; SVG.classList.remove('armata'); } else if (act === 'close') { G.ui = null; } else if (act === 'openrec') { G.ui = 'esercito'; } else if (act === 'selarm') { const q = G.arm.find(x => x.id === v); if (q) { G.selA = q.id; if (q.cid) G.selC = q.cid; paintMap(); } }
   panelDirty = true;
-};
-function renderLog() { $('log').innerHTML = G.log.slice(0, 60).map(l => `<div class="${l.cls}">${MESI[l.m]} ${l.a}: ${l.txt}</div>`).join(''); }
+}
+$('panel').onclick = onAct; $('abar').onclick = onAct;
+function renderLog() { $('log').innerHTML = G.log.slice(0, 6).map(l => `<div class="${l.cls}">${MESI[l.m]} ${l.a}: ${l.txt}</div>`).join(''); }
 
 /* ======================= INPUT ======================= */
 let drag = null;
@@ -505,14 +530,14 @@ function clickMappa(cx, cy, destro) {
   const p = puntoMappa(cx, cy), ku = 1 / (scaleBase * view.k); let hit = null, bd = 1e9;
   for (const a of G.arm) { const d = Math.hypot(a.x - p.x, a.y - p.y); if (d < raggioPx(a) * ku * 1.25 && d < bd) { bd = d; hit = a; } }
   const sel = G.arm.find(a => a.id === G.selA);
-  if (hit && !destro && (!sel || hit.id !== sel.id || true)) { G.selA = hit.id; if (hit.cid) G.selC = hit.cid; SVG.classList.toggle('armata', hit.owner === G.me); selez(); return; }
+  if (hit && !destro && (!sel || hit.id !== sel.id || true)) { G.selA = hit.id; if (hit.cid) G.selC = hit.cid; if (hit.owner !== G.me) G.ui = 'paese'; SVG.classList.toggle('armata', hit.owner === G.me); selez(); return; }
   if (sel && sel.owner === G.me) { ordina(sel, p.x, p.y); const id = countryAt(p.x, p.y); if (id) { G.selC = id; selez(); } panelDirty = true; return; }
-  const id = countryAt(p.x, p.y); if (id) { G.selC = id; G.selA = null; SVG.classList.remove('armata'); selez(); }
+  const id = countryAt(p.x, p.y); if (id) { G.selC = id; G.selA = null; G.ui = 'paese'; SVG.classList.remove('armata'); selez(); } else if (G.ui === 'paese') { G.ui = null; G.selA = null; selez(); }
 }
 function selez() { paintMap(); panelDirty = true; renderArmate(); }
 $('zIn').onclick = () => { const r = SVG.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.4); }; $('zOut').onclick = () => { const r = SVG.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / 1.4); };
 $('zReset').onclick = () => { view = { x: 0, y: 0, k: 1 }; clampView(); applyView(); };
-addEventListener('keydown', e => { if (G.fase !== 'play') return; if (e.code === 'Space') { e.preventDefault(); G.vel = G.vel ? 0 : 1; syncSpeed(); } else if (e.code === 'Escape') { G.selA = null; SVG.classList.remove('armata'); panelDirty = true; } else if ('12345'.includes(e.key)) { G.vel = +e.key - 1; syncSpeed(); } });
+addEventListener('keydown', e => { if (G.fase !== 'play') return; if (e.code === 'Space') { e.preventDefault(); G.vel = G.vel ? 0 : 1; syncSpeed(); } else if (e.code === 'Escape') { G.ui = null; G.selA = null; SVG.classList.remove('armata'); panelDirty = true; } else if ('12345'.includes(e.key)) { G.vel = +e.key - 1; syncSpeed(); } });
 addEventListener('resize', () => { resizeMap(); clampView(); applyView(); });
 
 /* ======================= MENU INIZIALE ======================= */
