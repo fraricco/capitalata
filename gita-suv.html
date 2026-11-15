@@ -199,7 +199,7 @@ function buildTile(ti, tj) {
     else if (type === 'spr') { items.trunk.push([x, h + 1, z, 0.35, 2, 0.35, '#5a3f28']); items.cone.push([x, h + 6 * s, z, 3.2 * s, 12 * s, 3.2 * s, pick(r, ['#24502f', '#2b5b35', '#1f4a2c'])]); }
     else { items.trunk.push([x, h + 2 * s, z, 0.5, 4 * s, 0.5, '#6b4a2b']); items.ball.push([x, h + 5.4 * s, z, 3.6 * s, 3.2 * s, 3.6 * s, pick(r, ['#4f8a3e', '#5d9544', '#3f7a38'])]); }
   }
-  const inst = (geo2, list, mat) => { if (!list.length) return; const m = new THREE.InstancedMesh(geo2, mat, list.length), m4 = new THREE.Matrix4(), cl = new THREE.Color(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s3 = new THREE.Vector3(); list.forEach((o, i) => { m4.compose(p.set(o[0], o[1], o[2]), q, s3.set(o[3], o[4], o[5])); m.setMatrixAt(i, m4); m.setColorAt(i, cl.set(o[6])); }); m.castShadow = true; m.frustumCulled = true; grp.add(m); };
+  const inst = (geo2, list, mat) => { if (!list.length) return; const m = new THREE.InstancedMesh(geo2, mat, list.length), m4 = new THREE.Matrix4(), cl = new THREE.Color(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s3 = new THREE.Vector3(); list.forEach((o, i) => { m4.compose(p.set(o[0], o[1], o[2]), q, s3.set(o[3], o[4], o[5])); m.setMatrixAt(i, m4); m.setColorAt(i, cl.set(o[6])); }); m.castShadow = true; m.frustumCulled = false; grp.add(m); };
   inst(new THREE.CylinderGeometry(1, 1.3, 1, 5), items.trunk, white); inst(new THREE.ConeGeometry(1, 1, 7), items.cone, white); inst(new THREE.IcosahedronGeometry(1, 1), items.ball, white);
   // case isolate
   for (let k = 0; k < 7; k++) {
