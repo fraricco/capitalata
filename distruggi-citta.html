@@ -29,7 +29,7 @@
   .opts button { background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.22); color: #fff; border-radius: 10px; padding: 9px 8px; font-family: inherit; font-size: 0.9rem; cursor: pointer; }
   .opts button small { display: block; opacity: .7; font-size: 0.72rem; margin-top: 2px; }
   .opts button.sel { border-color: #ffb347; background: rgba(255,179,71,0.2); }
-  #bBomb { right: 178px; bottom: 100px; width: 74px; height: 74px; background: rgba(140,40,20,.65); } #bFire { right: 100px; bottom: 100px; width: 74px; height: 74px; background: rgba(255,90,40,.55); } #bUp { right: 22px; bottom: 100px; } #bDn { right: 22px; bottom: 26px; } #bCam { right: 100px; bottom: 26px; width: 56px; height: 56px; font-size: 0.7rem; }
+  #bBomb { right: 178px; bottom: 100px; width: 74px; height: 74px; background: rgba(140,40,20,.65); } #bFire { right: 100px; bottom: 100px; width: 74px; height: 74px; background: rgba(255,90,40,.55); } #bUp { right: 22px; bottom: 100px; } #bDn { right: 22px; bottom: 26px; } #bNuke { right: 178px; bottom: 26px; width: 64px; height: 64px; background: rgba(110,160,20,.7); font-size: 0.66rem; } #bCam { right: 100px; bottom: 26px; width: 56px; height: 56px; font-size: 0.7rem; }
 </style>
 </head>
 <body>
@@ -37,7 +37,7 @@
 <canvas id="hud"></canvas>
 <div id="touch">
   <div id="stick"><div id="knob"></div></div>
-  <div class="tb" id="bUp" data-k="thUp">GAS +</div><div class="tb" id="bDn" data-k="thDn">GAS −</div><div class="tb" id="bBomb" data-k="bomb">BOMBA</div><div class="tb" id="bFire" data-k="fire">MISSILE</div><div class="tb" id="bCam" data-k="cam">CAM</div>
+  <div class="tb" id="bUp" data-k="thUp">GAS +</div><div class="tb" id="bDn" data-k="thDn">GAS −</div><div class="tb" id="bBomb" data-k="bomb">BOMBA</div><div class="tb" id="bFire" data-k="fire">MISSILE</div><div class="tb" id="bCam" data-k="cam">CAM</div><div class="tb" id="bNuke" data-k="nuke">☢ ATOM.</div>
 </div>
 <div id="overlay"><div class="panel" id="panel"><h2>Caricamento della città…</h2></div></div>
 
@@ -333,21 +333,29 @@ let vehIdx = 0, timeIdx = 0;
 
 // ---------- veicoli ----------
 function makeBomber() {
-  const g = new THREE.Group(), U = g.userData, hull = new THREE.MeshPhongMaterial({ color: '#2d323a', shininess: 55, specular: '#667', side: THREE.DoubleSide }), dk = new THREE.MeshPhongMaterial({ color: '#15181d' }), edge = new THREE.MeshPhongMaterial({ color: '#3a4049', side: THREE.DoubleSide });
-  const pts = [[0, -13], [26, 7], [26, 9.6], [16, 10.6], [12, 13.6], [7, 11.2], [0, 14.2]]; const full = pts.concat(pts.slice(1, -1).reverse().map(q => [-q[0], q[1]]));
+  // ala volante stealth: bordo d'attacco a freccia, bordo d'uscita a denti di sega, nessuna deriva, vernice opaca assorbente
+  const g = new THREE.Group(), U = g.userData, hull = new THREE.MeshPhongMaterial({ color: '#363a41', shininess: 7, specular: '#1a1d22', side: THREE.DoubleSide }), dk = new THREE.MeshPhongMaterial({ color: '#16181c', shininess: 5 }), edge = new THREE.MeshPhongMaterial({ color: '#2a2d33', shininess: 4, side: THREE.DoubleSide });
+  const half = [[0, -10.8], [26.2, 6.6], [26.2, 8.4], [19.4, 4.6], [15.2, 8.6], [10.4, 5.9], [6.2, 9.8], [3.0, 8.6], [0, 11.2]]; const full = half.concat(half.slice(1, -1).reverse().map(q => [-q[0], q[1]]));
   const sh = new THREE.Shape(); full.forEach((q, i) => i ? sh.lineTo(q[0], q[1]) : sh.moveTo(q[0], q[1]));
-  const geo = new THREE.ExtrudeGeometry(sh, { depth: 1.5, bevelEnabled: true, bevelSize: 0.5, bevelThickness: 0.5, bevelSegments: 2 }); geo.rotateX(Math.PI / 2); geo.translate(0, 0.75, 0);
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.9, bevelEnabled: true, bevelSize: 0.45, bevelThickness: 0.4, bevelSegments: 2 }); geo.rotateX(Math.PI / 2); geo.translate(0, 0.5, 0);
   const body = new THREE.Mesh(geo, hull); body.castShadow = true; g.add(body);
   const add = (geo2, mat, x, y, z) => { const m = new THREE.Mesh(geo2, mat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  add(new THREE.SphereGeometry(1, 22, 12), hull, 0, 0.55, -1.2).scale.set(3.6, 1.15, 9.4);                 // gobba centrale: fusoliera integrata nell'ala
+  add(new THREE.SphereGeometry(1, 14, 8), hull, 0, 0.35, -8.8).scale.set(1.5, 0.7, 2.6);                   // naso arrotondato
+  const glass = new THREE.MeshPhongMaterial({ color: '#0b121a', shininess: 140, specular: '#aab' });
   for (const sd of [-1, 1]) {
-    const can = add(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshPhongMaterial({ color: '#1c2a38', transparent: true, opacity: 0.85, shininess: 140 }), sd * 1.1, 1.1, -8.2); can.scale.set(0.9, 0.55, 1.9);
-    add(new THREE.BoxGeometry(2.4, 0.5, 4.2), dk, sd * 3.2, 1.0, -1.2);                       // prese d'aria sul dorso
-    add(new THREE.BoxGeometry(3.4, 0.25, 0.7), dk, sd * 5.2, 0.3, 11.8);                      // scarichi
-    add(new THREE.BoxGeometry(1.4, 0.3, 6.2), edge, sd * 6, -0.9, 1.5);                       // portelli della stiva
+    const w1 = add(new THREE.BoxGeometry(0.75, 0.1, 1.5), glass, sd * 0.95, 1.2, -7.6); w1.rotation.y = sd * 0.28; w1.rotation.x = -0.12;   // vetri della cabina
+    const w2 = add(new THREE.BoxGeometry(0.6, 0.1, 1.1), glass, sd * 1.75, 1.05, -6.3); w2.rotation.y = sd * 0.35;
+    add(new THREE.BoxGeometry(2.8, 0.45, 1.1), dk, sd * 3.7, 0.95, -6.5).rotation.y = sd * -0.5;        // prese d'aria a S sul dorso
+    add(new THREE.BoxGeometry(2.8, 0.4, 1.1), dk, sd * 8.5, 0.5, -3.4).rotation.y = sd * -0.55;
+    add(new THREE.BoxGeometry(1.6, 0.25, 4.5), edge, sd * 13, 0.55, 0.2);                                  // pannelli RAM
+    add(new THREE.BoxGeometry(1.4, 0.25, 3.5), edge, sd * 20, 0.35, 4.2);
   }
-  U.fl = []; for (const sd of [-1, 1]) U.fl.push(add(new THREE.ConeGeometry(0.9, 8, 10).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ff8a2a', transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }), sd * 5.2, 0.3, 16));
-  U.nav = add(new THREE.SphereGeometry(0.2, 6, 6), new THREE.MeshBasicMaterial({ color: '#ff3030' }), 0, 1.3, 12);
-  U.custom = dt => { for (const f of U.fl) { f.scale.set(1, 1, 0.4 + P.thr * 1.1 + Math.random() * 0.2); f.material.opacity = 0.15 + P.thr * 0.6; } U.nav.visible = (tAnim * 1.2) % 1 < 0.1; };
+  U.heat = []; const hm = () => new THREE.MeshBasicMaterial({ color: '#8a4a28', transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false });
+  for (const sd of [-1, 1]) for (const q of [[5, 8.1, 3.6], [11.8, 6.6, 3.2]]) { add(new THREE.BoxGeometry(q[2], 0.12, 1.5), dk, sd * q[0], 0.55, q[1]); U.heat.push(add(new THREE.BoxGeometry(q[2] * 0.9, 0.06, 1.2), hm(), sd * q[0], 0.62, q[1] + 0.15)); }   // scarichi piatti: solo un debole calore
+  U.doors = []; for (const sd of [-1, 1]) { const pv = new THREE.Group(); pv.position.set(sd * 1.55, -0.95, 0.4); g.add(pv); const d = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.1, 7.2), edge); d.position.x = -sd * 0.75; pv.add(d); U.doors.push({ pv, sd }); }   // portelli della stiva, si aprono per sganciare
+  U.fl = []; U.bayT = 0; U.ang = 0;
+  U.custom = dt => { U.bayT = Math.max(0, U.bayT - dt); U.ang += ((U.bayT > 0 ? 1.15 : 0) - U.ang) * Math.min(1, dt * 6); for (const d of U.doors) d.pv.rotation.z = d.sd * U.ang; for (const h of U.heat) h.material.opacity = 0.04 + P.thr * 0.14; };
   return g;
 }
 function makeUfo() {
@@ -393,6 +401,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyR' && !e.repeat) { if (mode === 'play') respawn(); return; }
   if (e.code === 'KeyT' && !e.repeat) { applyTime((timeIdx + 1) % 3); toast(TIMES[timeIdx].ic + ' ' + TIMES[timeIdx].n); return; }
   if (e.code === 'KeyV' && !e.repeat) { if (mode === 'play') { setVehicle((vehIdx + 1) % VEH.length); respawn(); toast(V().icon + ' ' + V().name + ' · ' + V().desc, 3.2); } return; }
+  if (e.code === 'KeyN' && !e.repeat) { dropNuke(); return; }
   if (e.code === 'KeyM' && !e.repeat) { muted = !muted; toast(muted ? '🔇 Audio disattivato' : '🔊 Audio attivo'); return; }
   if (e.code === 'Space') { e.preventDefault(); initAudio(); if (paused) { if (!e.repeat) togglePause(); return; } keys.Space = true; return; }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
@@ -525,9 +534,9 @@ function initAudio() {
 }
 function updateEngine() {
   if (!ENG || !AC) return; const on = mode === 'play' && !paused && P.alive && !muted, t = AC.currentTime;
-  ENG.rumble.g.gain.setTargetAtTime(on ? 0.06 + 0.16 * P.thr : 0, t, 0.12); ENG.rumble.f.frequency.setTargetAtTime(220 + P.thr * 700, t, 0.15);
+  const qt = V().id === 'bomber' ? 0.55 : 1; ENG.rumble.g.gain.setTargetAtTime(on ? (0.06 + 0.16 * P.thr) * qt : 0, t, 0.12); ENG.rumble.f.frequency.setTargetAtTime(220 + P.thr * 700, t, 0.15);
   ENG.wind.g.gain.setTargetAtTime(on ? clamp((P.speed - 70) / 280, 0, 1) * 0.07 : 0, t, 0.2);
-  ENG.whine.g.gain.setTargetAtTime(on ? 0.008 + 0.02 * P.thr : 0, t, 0.15); ENG.whine.o.frequency.setTargetAtTime(280 + P.thr * 520 + P.speed * 0.4, t, 0.15);
+  ENG.whine.g.gain.setTargetAtTime(on ? (0.008 + 0.02 * P.thr) * qt : 0, t, 0.15); ENG.whine.o.frequency.setTargetAtTime(280 + P.thr * 520 + P.speed * 0.4, t, 0.15);
 }
 function snd(vol, dur, lp, hp) { if (!AC || !noiseBuf || vol < 0.004) return; try { const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); s.buffer = noiseBuf; f.type = hp ? 'highpass' : 'lowpass'; f.frequency.value = lp; g.gain.value = vol; s.connect(f); f.connect(g); g.connect(AC.destination); s.start(); g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + dur); s.stop(AC.currentTime + dur); } catch (e) {} }
 const boomSound = (x, y, z, big) => { const d = Math.hypot(P.x - x, P.y - y, P.z - z); snd(clamp((big ? 0.5 : 0.3) - d / 5000, 0.01, 0.5), big ? 1.6 : 0.9, big ? 380 : 700); };
@@ -753,7 +762,7 @@ function makeBomb() {
 }
 const bombSched = [];
 function spawnBomb() {
-  const Vh = V(), U = plane.userData; if (U.bomb) { U.bombT = 1.0; }
+  const Vh = V(), U = plane.userData; if (U.bomb) { U.bombT = 1.0; } U.bayT = 1.6;
   const b = Vh.bay, pos = plane.localToWorld(new THREE.Vector3(b[0], b[1], b[2])), fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(pq);
   const m = makeBomb(); m.scale.setScalar(1.15); m.position.copy(pos); scene.add(m);
   bombs.push({ m, x: pos.x, y: pos.y, z: pos.z, vx: fwd.x * P.speed, vy: fwd.y * Math.max(P.speed, 20) - 4, vz: fwd.z * P.speed, life: 40, pt: 0 });
@@ -816,6 +825,119 @@ function updateMegas(dt) {
     if (m.glow) { m.glow.material.opacity = Math.max(0, 0.9 - t / 24); if (t > 24) { scene.remove(m.glow); m.glow.material.dispose(); m.glow = null; } }
     if (t > 26) megas.splice(i, 1);
   }
+}
+
+// ---------- BOMBA ATOMICA ----------
+const NUKE_CD = 120, NUKE_R = 1650;           // una ogni 2 minuti; raggio dell'onda d'urto (m)
+let nukeCool = 0, dose = 0, geigerT = 0;
+const nukes = [], nukeFx = [], radZones = [];
+function makeNuke() {
+  const g = new THREE.Group(), body = new THREE.MeshPhongMaterial({ color: '#2f3439', shininess: 70, specular: '#9ab' }), band = new THREE.MeshPhongMaterial({ color: '#c9a21a' }), dk = new THREE.MeshPhongMaterial({ color: '#16181b' });
+  const b = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 16), body); b.scale.set(1.25, 1.25, 2.3); g.add(b);
+  const st = new THREE.Mesh(new THREE.CylinderGeometry(1.26, 1.26, 0.35, 22).rotateX(Math.PI / 2), band); st.position.z = -0.9; g.add(st);
+  const tl = new THREE.Mesh(new THREE.ConeGeometry(1.15, 2.6, 16).rotateX(Math.PI / 2), body); tl.position.z = 3.2; g.add(tl);
+  const bx = new THREE.Mesh(new THREE.BoxGeometry(3.3, 3.3, 0.3), dk); bx.position.z = 4.6; g.add(bx); const bx2 = bx.clone(); bx2.rotation.z = Math.PI / 4; g.add(bx2);
+  for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.5, 1.4), dk); f.position.set(Math.cos(k * Math.PI / 2) * 1.5, Math.sin(k * Math.PI / 2) * 1.5, 3.4); f.rotation.z = k * Math.PI / 2; g.add(f); }
+  g.scale.setScalar(1.25); g.traverse(o => { if (o.isMesh) o.castShadow = true; }); return g;
+}
+function dropNuke() {
+  if (mode !== 'play' || paused || !P.alive) return;
+  if (nukeCool > 0) { toast('☢ Bomba atomica in ricarica: ' + Math.ceil(nukeCool) + ' s', 1.6); return; }
+  nukeCool = NUKE_CD; const Vh = V(), U = plane.userData; U.bayT = 3.5;
+  const b = Vh.bay, pos = plane.localToWorld(new THREE.Vector3(b[0], b[1] - 1.2, b[2])), fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(pq);
+  const m = makeNuke(); m.position.copy(pos); scene.add(m);
+  nukes.push({ m, x: pos.x, y: pos.y, z: pos.z, vx: fwd.x * P.speed, vy: fwd.y * Math.max(P.speed, 20) - 4, vz: fwd.z * P.speed, air: pos.y > 450, life: 70 });
+  snd(0.2, 0.9, 500, true); toast('☢ BOMBA ATOMICA sganciata! Allontanati subito!', 4.5);
+}
+function updateNukes(dt) {
+  const ax = new THREE.Vector3(0, 0, -1), dir = new THREE.Vector3();
+  for (let i = nukes.length - 1; i >= 0; i--) {
+    const q = nukes[i]; q.life -= dt; q.vy -= 24 * dt; const dr = Math.exp(-0.6 * dt); q.vx *= dr; q.vz *= dr;   // il paracadute frena l'avanzamento: l'aereo si allontana
+    const sp = Math.hypot(q.vx, q.vy, q.vz), steps = Math.max(1, Math.ceil(sp * dt / 3)), st = dt / steps; let det = false;
+    for (let k = 0; k < steps; k++) { q.x += q.vx * st; q.y += q.vy * st; q.z += q.vz * st; if (q.y < 0.7 || hitBuilding(q.x, q.y, q.z) || (q.air && q.y < 300)) { det = true; break; } }   // scoppio in aria a 300 m se sganciata da alta quota
+    if (det || q.life <= 0) { scene.remove(q.m); q.m.traverse(o => o.geometry && o.geometry.dispose()); nukes.splice(i, 1); if (det) nukeBoom(q.x, Math.max(q.y, 3), q.z); continue; }
+    dir.set(q.vx, q.vy, q.vz).normalize(); q.m.position.set(q.x, q.y, q.z); q.m.quaternion.setFromUnitVectors(ax, dir);
+  }
+}
+function nukeBoom(x, y, z) {
+  const nk = { x, y, z, t: 0, li: 0, deb: 0, sm: 0, treeT: 0, mush: null };
+  nk.list = buildings.filter(b => b.alive).map(b => ({ b, d: Math.hypot(b.x - x, b.z - z) })).filter(o => o.d < NUKE_R + 90).sort((a, c) => a.d - c.d);
+  const add = (geo, mat, px, py, pz, sc) => { const m = new THREE.Mesh(geo, mat); m.position.set(px, py, pz); m.scale.set(sc[0], sc[1], sc[2]); scene.add(m); return m; };
+  nk.fb = add(puffGeo, new THREE.MeshBasicMaterial({ color: '#fffbe8', transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending }), x, y, z, [60, 60, 60]);
+  nk.ring = add(new THREE.RingGeometry(0.94, 1, 80).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#fff0c8', transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }), x, 4, z, [10, 1, 10]);
+  nk.dome = add(new THREE.SphereGeometry(1, 40, 20, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffe2b0', transparent: true, opacity: 0.26, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }), x, 0, z, [10, 10, 10]);
+  nk.scorch = add(decalGeo, new THREE.MeshBasicMaterial({ color: '#0f0d0b', transparent: true, opacity: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }), x, 0.64, z, [760, 1, 760]);
+  nk.glow = add(decalGeo, new THREE.MeshBasicMaterial({ color: '#ff7a20', transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4 }), x, 0.7, z, [470, 1, 470]);
+  // fungo atomico fatto di masse di fumo: cappello a toro che ruota, gambo, gonna di polvere
+  const geo = new THREE.SphereGeometry(1, 14, 10), grp = new THREE.Group(); grp.position.set(x, 0, z); scene.add(grp);
+  const mk = () => { const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: '#ffd080', emissive: '#ff6a10', transparent: true, opacity: 0.92, depthWrite: false })); m.visible = false; grp.add(m); return m; };
+  nk.mush = { grp, cap: [], stem: [], skirt: [] };
+  for (let i = 0; i < 44; i++) nk.mush.cap.push({ m: mk(), a: rnd() * 6.283, b: rnd() * 6.283, r: 0.65 + rnd() * 0.5, w: 0.45 + rnd() * 0.5 });
+  for (let i = 0; i < 24; i++) nk.mush.stem.push({ m: mk(), u: i / 23, ph: rnd() * 6.283, ox: (rnd() - 0.5), oz: (rnd() - 0.5) });
+  for (let i = 0; i < 28; i++) nk.mush.skirt.push({ m: mk(), a: i / 28 * 6.283 + rnd() * 0.2, r: 0.8 + rnd() * 0.5 });
+  nukeFx.push(nk);
+  // zona radioattiva
+  const rd = new THREE.Mesh(decalGeo, new THREE.MeshBasicMaterial({ color: '#7dff3c', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -5 })); rd.position.set(x, 0.8, z); rd.scale.set(1150, 1, 1150); scene.add(rd);
+  radZones.push({ x, z, R: 1150, t: 0, life: 180, decal: rd, acc: 0 });
+  // lampo, rimbombo, scuotimento
+  flashT = 2.6; flashLight(x, y, z, 26); shake = Math.max(shake, 4.5); expI = Math.max(expI, 26);
+  snd(0.9, 6, 80); snd(0.55, 3.2, 260); snd(0.25, 1.5, 1200);
+  for (let k = 0; k < 150; k++) { const a = rnd() * 6.283, r = rnd() * 260; flame(x + Math.cos(a) * r, y + (rnd() - 0.3) * 240, z + Math.sin(a) * r, 60 + rnd() * 60, 260 + rnd() * 160, 2 + rnd() * 2, pick(['#ff7a1a', '#ffb040', '#fff0b0', '#ff5a10']), 0.95, 30 + rnd() * 60); }
+  if (P.alive && Math.hypot(P.x - x, P.y - y, P.z - z) < 520) crash('Vaporizzato dall\'esplosione atomica', 'blast');
+  toast('☢ ESPLOSIONE ATOMICA!', 4.5);
+}
+function nukeHit(nk, o) {
+  const b = o.b; if (!b.alive) return; ensureSliced(b); const r = o.d / NUKE_R;
+  const keep = r < 0.5 ? -1 : r < 0.78 ? 8 + (r - 0.5) / 0.28 * 50 : 45 + (r - 0.78) / 0.22 * 230;   // quota fino a cui l'edificio resta in piedi
+  let n = 0; for (const q of b.sl) { if (q.dead) continue; if (keep < 0 || q.y0 > keep) { killSlice(b, q); n++; } }
+  if (!n) return;
+  const lx = (b.x - nk.x) / (o.d || 1), lz = (b.z - nk.z) / (o.d || 1);
+  if (nk.deb < 320) { nk.deb++; const v = 60 + rnd() * 90; for (let k = 0; k < 2; k++) debris(b.x + (rnd() - 0.5) * b.w * 0.5, 20 + rnd() * Math.min(b.h, 120), b.z + (rnd() - 0.5) * b.d * 0.5, lx * v + (rnd() - 0.5) * 30, 25 + rnd() * 70, lz * v + (rnd() - 0.5) * 30, 2 + rnd() * 6, pick(['#8a847a', '#9d968a', '#6f6a63', '#aea797'])); }
+  if (nk.sm < 170) { nk.sm++; smoke(b.x, 10 + rnd() * 30, b.z, 30, 110, 7, pick(['#8d877c', '#6c665d', '#a49f95']), 0.6, 14); }
+  if (fires.length < 130 && rnd() < (r < 0.78 ? 0.45 : 0.75)) fires.push({ x: b.x, y: keep < 0 ? 8 : Math.max(8, keep * 0.6), z: b.z, life: 45 + rnd() * 50, t: 0, b: keep < 0 ? { alive: true } : b });
+  const fall = settle(b); if (fall.length && keep >= 0 && falling.length < 25) startFall(b, fall);
+  b.blk.dirty = true; dirty.add(b.blk);
+}
+function updateNukeFx(dt) {
+  for (let i = nukeFx.length - 1; i >= 0; i--) {
+    const nk = nukeFx[i]; nk.t += dt; const t = nk.t, sh = NUKE_R * (1 - Math.exp(-t * 1.25)) * 1.03;
+    // palla di fuoco
+    if (nk.fb) { const rf = 60 + 360 * (1 - Math.exp(-t * 1.8)); nk.fb.scale.setScalar(rf); nk.fb.position.y = nk.y + (1 - Math.exp(-t * 0.7)) * 220; nk.fb.material.opacity = Math.max(0, 1 - t / 4.2); nk.fb.material.color.set(t < 0.6 ? '#fffbe8' : t < 1.8 ? '#ffd27a' : '#ff7a2a'); if (t > 4.3) { scene.remove(nk.fb); nk.fb.material.dispose(); nk.fb = null; } }
+    // onda d'urto
+    if (nk.ring) { nk.ring.scale.set(sh, 1, sh); nk.ring.material.opacity = Math.max(0, 0.9 - t * 0.33); nk.dome.scale.setScalar(sh * 0.95); nk.dome.material.opacity = Math.max(0, 0.26 - t * 0.09); if (t > 3) { for (const k of ['ring', 'dome']) { scene.remove(nk[k]); nk[k].geometry.dispose(); nk[k].material.dispose(); nk[k] = null; } } }
+    let c = 0; while (nk.li < nk.list.length && nk.list[nk.li].d <= sh && c < 40) { nukeHit(nk, nk.list[nk.li++]); c++; }
+    nk.treeT -= dt; if (nk.treeT <= 0 && t < 4) { nk.treeT = 0.3; clearTrees(nk.x, nk.z, Math.min(sh, NUKE_R) * 0.97); }
+    // il velivolo investito dall'onda
+    if (P.alive && !nk.hurt) { const d = Math.hypot(P.x - nk.x, P.z - nk.z); if (d < sh) { nk.hurt = true; shake = Math.max(shake, 3); flashT = Math.max(flashT, 0.5); if (d < NUKE_R * 0.42) crash('Investito dall\'onda atomica', 'blast'); else toast('💨 L\'onda d\'urto ti ha raggiunto!', 3); } }
+    if (t < 3) { shake = Math.max(shake, 1.6 - t * 0.4); }
+    // macchie a terra
+    if (nk.glow) { nk.glow.material.opacity = Math.max(0, 0.9 - t / 40); if (t > 40) { scene.remove(nk.glow); nk.glow.material.dispose(); nk.glow = null; } }
+    // fungo
+    const M = nk.mush, cy = nk.y + (1900 - nk.y) * (1 - Math.exp(-t / 9)), CR = 110 + 520 * (1 - Math.exp(-t / 7)), rm = CR * 0.4, heat = clamp(1 - t / 16, 0, 1), fade = t < 50 ? 1 : Math.max(0, 1 - (t - 50) / 40);
+    const hot = new THREE.Color('#ffd68a'), ash = new THREE.Color('#5e564e'), em = new THREE.Color('#ff6a10');
+    const paint = (m, hh, op) => { m.material.color.copy(hot).lerp(ash, clamp(1 - hh, 0, 1)); m.material.emissive.copy(em).multiplyScalar(hh * 0.9); m.material.opacity = op * fade; m.visible = op * fade > 0.01; };
+    if (t > 0.35) {
+      for (const p of M.cap) { const bb = p.b + t * p.w * 0.6, rr = CR * 0.85 + rm * 0.9 * Math.cos(bb), s = rm * 0.95 * p.r * (0.5 + 0.5 * Math.min(1, t / 3)); p.m.position.set(Math.cos(p.a) * rr, cy + rm * 0.85 * Math.sin(bb), Math.sin(p.a) * rr); p.m.scale.setScalar(s); paint(p.m, heat * (0.55 + 0.45 * Math.sin(bb)), 0.9); }
+      for (const p of M.stem) { const yy = p.u * (cy - rm * 0.3), s = lerp(120, 62, p.u) * (1 + 0.14 * Math.sin(p.ph + t * 1.3)) * Math.min(1, (t - 0.3) / 2); p.m.position.set(p.ox * 40 * (1 - p.u * 0.5), yy, p.oz * 40 * (1 - p.u * 0.5)); p.m.scale.setScalar(Math.max(0.1, s)); paint(p.m, heat * (1 - p.u * 0.35) * 0.9, 0.88); }
+      for (const p of M.skirt) { const rs = 80 + 1050 * (1 - Math.exp(-t / 5.5)) * p.r, s = 90 + 110 * p.r + t * 3; p.m.position.set(Math.cos(p.a) * rs, 22 + 28 * p.r, Math.sin(p.a) * rs); p.m.scale.set(s, s * 0.5, s); paint(p.m, 0.12, t < 20 ? 0.8 : Math.max(0, 0.8 - (t - 20) / 30)); }
+    }
+    if (t < 7 && t > 0.3) { nk.acc = (nk.acc || 0) + dt * 40; while (nk.acc >= 1) { nk.acc--; const a = rnd() * 6.283, r = rnd() * 70; smoke(nk.x + Math.cos(a) * r, cy * rnd(), nk.z + Math.sin(a) * r, 70, 150, 6, pick(['#6a625a', '#8a8074']), 0.45, 25); } }
+    if (t > 95) { scene.remove(M.grp); M.cap.concat(M.stem, M.skirt).forEach(p => p.m.material.dispose()); nukeFx.splice(i, 1); }
+  }
+}
+function updateRad(dt) {
+  let rate = 0;
+  for (let i = radZones.length - 1; i >= 0; i--) {
+    const z = radZones[i]; z.t += dt; const k = z.t / z.life;
+    if (k >= 1) { scene.remove(z.decal); z.decal.material.dispose(); radZones.splice(i, 1); continue; }
+    const fade = Math.min(1, z.t / 5) * (1 - k);
+    z.decal.material.opacity = (0.2 + 0.08 * Math.sin(tAnim * 2.4)) * fade;
+    z.acc += dt * 12 * fade; while (z.acc >= 1) { z.acc--; const a = rnd() * 6.283, r = Math.sqrt(rnd()) * z.R; smoke(z.x + Math.cos(a) * r, 3 + rnd() * 40, z.z + Math.sin(a) * r, 5, 12, 5, '#b4ff8a', 0.26, 4); }
+    if (P.alive) { const d = Math.hypot(P.x - z.x, P.z - z.z); if (d < z.R && P.y < 220) rate = Math.max(rate, (1 - 0.6 * d / z.R) * (1 - P.y / 220) * fade); }
+  }
+  if (!P.alive) dose = 0;
+  else if (rate > 0.01) { dose += rate * dt * 24; geigerT -= dt; if (geigerT <= 0) { geigerT = (0.35 / (0.25 + rate * 5)) * (0.5 + rnd()); snd(0.06, 0.03, 2600, true); } if (dose >= 100) { dose = 0; crash('Equipaggio ucciso dalle radiazioni', 'blast'); } }
+  else dose = Math.max(0, dose - dt * 10);
 }
 
 // ---------- raggio della morte ----------
@@ -898,6 +1020,10 @@ function drawHUD() {
   ctx.fillStyle = '#fff'; ctx.font = '14px sans-serif'; ctx.fillText('Quota ' + Math.max(0, Math.round(P.y)) + ' m', pad + 12, pad + 74);
   const hd = ((P.yaw * 180 / Math.PI) % 360 + 360) % 360; ctx.fillText('Rotta ' + Math.round(hd) + '° ' + ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(hd / 45) % 8], pad + 12, pad + 94);
   ctx.fillStyle = '#ff8a4a'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'left'; ctx.fillText('💥 Distruzione ' + (100 * destVol / Math.max(1, totalVol)).toFixed(2) + '%', pad + 12, pad + 120); ctx.fillStyle = '#fff'; ctx.font = '13px sans-serif'; ctx.fillText('🏢 Edifici abbattuti: ' + ruined, pad + 12, pad + 140);
+  // bomba atomica
+  { const y = pad + 164, rdy = nukeCool <= 0; ctx.fillStyle = 'rgba(8,16,28,.6)'; rr(pad, y, 210, 40, 10); ctx.fill(); ctx.textAlign = 'left'; ctx.font = 'bold 13px sans-serif'; ctx.fillStyle = rdy ? (Math.floor(tAnim * 3) % 2 ? '#c8ff6a' : '#9be83a') : '#c8d0da'; ctx.fillText('☢ ATOMICA [N] ' + (rdy ? 'PRONTA' : Math.ceil(nukeCool) + ' s'), pad + 12, y + 17);
+    ctx.fillStyle = 'rgba(255,255,255,.18)'; rr(pad + 12, y + 24, 186, 8, 4); ctx.fill(); ctx.fillStyle = rdy ? '#9be83a' : '#e0a030'; rr(pad + 12, y + 24, Math.max(6, 186 * (1 - nukeCool / NUKE_CD)), 8, 4); ctx.fill(); }
+  if (dose > 1) { const w = 260, x0 = vw / 2 - w / 2, y0 = vh * 0.2; ctx.fillStyle = 'rgba(40,0,0,.7)'; rr(x0, y0, w, 44, 12); ctx.fill(); ctx.textAlign = 'center'; ctx.font = 'bold 15px sans-serif'; ctx.fillStyle = Math.floor(tAnim * 5) % 2 ? '#ff5a3a' : '#ffd070'; ctx.fillText('☢ RADIAZIONI — sali di quota!', vw / 2, y0 + 19); ctx.fillStyle = 'rgba(255,255,255,.2)'; rr(x0 + 14, y0 + 27, w - 28, 8, 4); ctx.fill(); ctx.fillStyle = '#ff4a2a'; rr(x0 + 14, y0 + 27, Math.max(6, (w - 28) * dose / 100), 8, 4); ctx.fill(); }
   // gas
   ctx.fillStyle = 'rgba(255,255,255,.2)'; rr(pad + 150, pad + 30, 14, 70, 6); ctx.fill(); ctx.fillStyle = P.thr > 0.92 ? '#ff7a3a' : '#7ad7ff'; const th = 70 * P.thr; rr(pad + 150, pad + 30 + 70 - th, 14, Math.max(4, th), 6); ctx.fill();
   ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('GAS', pad + 157, pad + 112);
@@ -918,6 +1044,7 @@ function drawHUD() {
   // minimappa
   const mw = 160, mh = mw * miniCanvas.height / miniCanvas.width, mx = vw - mw - pad, my = pad, k = mw / CW;
   ctx.fillStyle = 'rgba(8,16,28,.7)'; rr(mx - 4, my - 4, mw + 8, mh + 8, 8); ctx.fill(); ctx.drawImage(miniCanvas, mx, my, mw, mh);
+  for (const z of radZones) { ctx.fillStyle = 'rgba(125,255,60,.28)'; ctx.strokeStyle = 'rgba(160,255,90,.8)'; ctx.beginPath(); ctx.arc(mx + (z.x + CW / 2) * k, my + (z.z + CD / 2) * k, z.R * k, 0, 7); ctx.fill(); ctx.stroke(); }
   ctx.save(); ctx.translate(mx + (P.x + CW / 2) * k, my + (P.z + CD / 2) * k); ctx.rotate(P.yaw); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(-4, 5); ctx.lineTo(4, 5); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
 }
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
@@ -931,7 +1058,7 @@ function showMenu() {
     <p style="margin-bottom:2px"><b>Ora del giorno</b></p><div class="opts" id="tO">${TIMES.map((t, i) => `<button data-i="${i}" class="${i === timeIdx ? 'sel' : ''}">${t.ic} ${t.n}</button>`).join('')}</div>
     <div class="keys"><kbd>←</kbd><kbd>→</kbd> inclina e vira · <kbd>↑</kbd><kbd>↓</kbd> beccheggio (<kbd>I</kbd> inverte)<br>
     <kbd>W</kbd> / <kbd>S</kbd> (o <kbd>Shift</kbd> / <kbd>Ctrl</kbd>) acceleratore · <kbd>A</kbd><kbd>D</kbd> timone<br>
-    <kbd>SPAZIO</kbd> (tieni) missili (disco volante: <b>raggio della morte</b>) · <kbd>B</kbd> (tieni) <b>bombe pesanti</b><br>
+    <kbd>SPAZIO</kbd> (tieni) missili (disco volante: <b>raggio della morte</b>) · <kbd>B</kbd> (tieni) <b>bombe pesanti</b> · <kbd>N</kbd> <b>☢ bomba atomica</b> (una ogni 2 minuti)<br>
     <kbd>V</kbd> cambia veicolo · <kbd>T</kbd> cambia ora · <kbd>C</kbd> telecamera · <kbd>R</kbd> riparti · <kbd>M</kbd> audio · <kbd>P</kbd> pausa<br>
     <b>Schiantati contro un grattacielo: più sei veloce e pesante, più è devastante!</b><br><small>Su telefono: joystick a sinistra, GAS, MISSILE e BOMBA a destra.</small></div>
     <button class="big" id="bGo">Decolla!</button><br><a class="back" href="index.html">← Torna ai giochi</a>`);
@@ -946,9 +1073,9 @@ function update(dt) {
   tAnim += dt; if (toastT > 0) toastT -= dt;
   if (mode === 'menu') { P.yaw += 0.04 * dt; P.x = Math.sin(tAnim * 0.12) * 900; P.z = 1000 + Math.cos(tAnim * 0.12) * 300; P.y = 520; P.roll = Math.sin(tAnim * 0.3) * 0.2; P.pitch = -0.1; plane.visible = false; updateCamera(dt); camera.position.set(P.x - 60, 330, P.z + 360); camera.lookAt(0, 160, -100); return; }
   if (paused) return;
-  cool = Math.max(0, cool - dt); bombCool = Math.max(0, bombCool - dt); if ((keys.Space || touch.fire) && P.alive) fireMissile(); if ((keys.KeyB || touch.bomb) && P.alive) dropBomb(); updateBombSched(dt); updateRay(dt);
+  cool = Math.max(0, cool - dt); bombCool = Math.max(0, bombCool - dt); nukeCool = Math.max(0, nukeCool - dt); if (touch.nuke) { touch.nuke = false; dropNuke(); } if ((keys.Space || touch.fire) && P.alive) fireMissile(); if ((keys.KeyB || touch.bomb) && P.alive) dropBomb(); updateBombSched(dt); updateRay(dt);
   if (P.alive) updateFlight(dt); else { P.respawn -= dt; if (P.respawn <= 0) respawn(); }
-  updateMissiles(dt); updateBombs(dt); updateMegas(dt); updateFalling(dt); updateFires(dt); updateParticles(dt); updateFx(dt); updateDirty(); processRubble(); updateEngine(); shake = Math.max(0, shake - dt * 1.4); updateCamera(dt);
+  updateMissiles(dt); updateBombs(dt); updateNukes(dt); updateNukeFx(dt); updateRad(dt); updateMegas(dt); updateFalling(dt); updateFires(dt); updateParticles(dt); updateFx(dt); updateDirty(); processRubble(); updateEngine(); shake = Math.max(0, shake - dt * 1.4); updateCamera(dt);
 }
 let last = performance.now();
 function loop(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; update(dt); renderer.render(scene, camera); drawHUD(); requestAnimationFrame(loop); }
@@ -957,7 +1084,7 @@ setTimeout(() => {
   buildGround(); buildMini(); buildNight(); applyTime(0); setVehicle(0);
   for (const b of buildings) { b.vol0 = b.secs.reduce((a, q) => a + secVol(q), 0); totalVol += b.vol0; }
   showMenu();
-  window.__g = { keys, setVehicle, applyTime, crash, bigExplosion, VEH, get plane() { return plane; }, get bombs() { return bombs; }, get megas() { return megas; }, fireMissile, blast, missiles, falling, get stats() { return { totalVol, destVol, ruined }; }, P, buildings, blocks, step: (n, dt) => { for (let i = 0; i < n; i++) update(dt); }, get mode() { return mode; }, respawn, setMode: m => { mode = m; overlay.classList.add('hidden'); }, camera, scene };
+  window.__g = { nukeBoom, dropNuke, nukes, radZones, get dose() { return dose; }, get nukeCool() { return nukeCool; }, set nukeCool(v) { nukeCool = v; }, nukeFx, keys, setVehicle, applyTime, crash, bigExplosion, VEH, get plane() { return plane; }, get bombs() { return bombs; }, get megas() { return megas; }, fireMissile, blast, missiles, falling, get stats() { return { totalVol, destVol, ruined }; }, P, buildings, blocks, step: (n, dt) => { for (let i = 0; i < n; i++) update(dt); }, get mode() { return mode; }, respawn, setMode: m => { mode = m; overlay.classList.add('hidden'); }, camera, scene };
 }, 60);
 requestAnimationFrame(loop);
 })();
