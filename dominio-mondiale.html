@@ -30,6 +30,7 @@
   .side .scroll { flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
   .log { position: absolute; left: 10px; bottom: 10px; width: min(380px, 70%); max-height: 130px; overflow: hidden; padding: 6px 10px; font-size: .76rem; line-height: 1.4; background: rgba(8,20,34,.72); border: 1px solid var(--border); border-radius: 8px; pointer-events: none; }
   .log div { padding: 1px 0; opacity: .85; } .log .big { color: #ffd27d; font-weight: 700; opacity: 1; } .log .bad { color: #ff9d9d; opacity: 1; } .log .good { color: #86e6b4; opacity: 1; } .log .dip { color: #9fd4ff; }
+  .ask { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: rgba(8,20,34,.97); border: 1px solid var(--gold); border-radius: 12px; padding: 12px 14px; z-index: 9; max-width: 92%; width: 340px; font-size: .88rem; }
   .abar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); align-items: center; gap: 8px; background: rgba(8,20,34,.95); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; z-index: 7; white-space: nowrap; }
   .stat[data-ui] { cursor: pointer; padding: 4px 9px; border: 1px solid var(--border); border-radius: 8px; background: rgba(255,255,255,.06); } .stat[data-ui]:hover { background: rgba(255,255,255,.14); } .stat[data-ui].on { border-color: var(--gold); }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
@@ -67,7 +68,7 @@
   <div class="mapwrap" id="mapwrap">
     <svg id="map" preserveAspectRatio="xMidYMid meet"><g id="cam"><g id="gC"></g><g id="gOcc"></g><g id="gLbl"></g><g id="gOrd"></g><g id="gArm"></g></g></svg>
     <div class="zoombox"><button id="zIn">+</button><button id="zOut">&minus;</button><button id="zReset">⌂</button></div>
-    <div class="log" id="log"></div><div class="abar" id="abar" style="display:none"></div><div class="tip" id="tip"></div><div class="toast" id="toast"></div>
+    <div class="log" id="log"></div><div class="ask" id="ask" style="display:none"></div><div class="abar" id="abar" style="display:none"></div><div class="tip" id="tip"></div><div class="toast" id="toast"></div>
   </div>
   <aside class="side" id="side"><div class="scroll" id="panel"></div></aside>
 </main>
@@ -88,7 +89,7 @@ const MAN_FRAC = 0.012;    // quota della popolazione richiamabile
 const MAN_RATE = 0.02;     // rigenerazione mensile dei richiamabili
 const ADDEST = 2;          // mesi di addestramento
 const VEL_ARM = 55;        // unita' di mappa percorse in un mese
-const R_SCONTRO = 9, K_SCONTRO = 4.5, OCC_BASE = 0.8, MIN_ARM = 300, ATTR = 0.014;
+const R_SCONTRO = 9, K_SCONTRO = 0.45, OCC_BASE = 0.8, MIN_ARM = 300, ATTR = 0.014;
 const MS_MESE = 6000, VELS = [0, 1, 2, 4, 8];
 const SOGLIA = 0.75;       // quota di paesi di un continente per "dominarlo"
 const CONT = ['Europa', 'Asia', 'Africa', 'Nord America', 'Sud America', 'Oceania'];
@@ -117,6 +118,10 @@ const GRW = Math.ceil(W), GRH = Math.ceil(H), GRID = new Int16Array(GRW * GRH).f
     }
   });
 })();
+const OCC = new Int16Array(GRW * GRH).fill(-1), CELLS = new Int32Array(IDS.length), BB = [];
+for (let i = 0; i < GRID.length; i++) if (GRID[i] >= 0) CELLS[GRID[i]]++;
+M.c.forEach(c => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const r of c.r) for (let i = 0; i < r.length; i += 2) { x0 = Math.min(x0, r[i]); x1 = Math.max(x1, r[i]); y0 = Math.min(y0, r[i + 1]); y1 = Math.max(y1, r[i + 1]); } BB.push([x0, y0, x1, y1]); });
+let occDirty = false;
 function countryAt(x, y) { const ix = Math.floor(x), iy = Math.floor(y); if (ix < 0 || iy < 0 || ix >= GRW || iy >= GRH) return null; const v = GRID[iy * GRW + ix]; return v < 0 ? null : IDS[v]; }
 
 /* ======================= STATO ======================= */
@@ -194,10 +199,10 @@ function startGame(pid, diff) {
   const D = DIFFS[diff];
   M.c.forEach((c, i) => {
     const rc = { id: c.id, n: c.n, k: c.k, pop: c.pop, gdp: c.gdp, gdp0: c.gdp, lx: c.lx, ly: c.ly, nb: c.nb, owner: c.id, unrest: 0, occ: null, man: 0, maxMan: c.pop * 1e6 * MAN_FRAC, garr: 0 };
-    rc.man = rc.maxMan * 0.7; rc.garr = maxGarr(rc) * 0.8; G.C[c.id] = rc;
+    rc.occList = []; rc.cnt = {}; rc.man = rc.maxMan * 0.7; rc.garr = maxGarr(rc) * 0.8; G.C[c.id] = rc;
     G.F[c.id] = { id: c.id, name: c.n, color: palette(i), cap: c.id, money: 0, queue: [], war: {}, rel: {}, tr: {}, aiT: rnd() * 4, alive: true, pace: -99 };
   });
-  G.F[pid].color = '#ffb347'; G.ownDirty = true;
+  G.F[pid].color = '#ffb347'; G.ownDirty = true; OCC.fill(-1); occDirty = true; G.ask = null;
   for (const id of IDS) { const f = F(id); f.money = income(id) * (id === pid ? 10 : 4); }
   // armate iniziali: i paesi piu' ricchi partono con un esercito mobile
   [...M.c].sort((a, b) => b.gdp - a.gdp).slice(0, 70).forEach(c => { const rc = C(c.id); creaArmata(c.id, Math.max(MIN_ARM * 2, rc.garr * 0.9), rc.lx, rc.ly); });
@@ -257,7 +262,7 @@ function tickScontri(dtM) {
     const a = G.arm[i], b = G.arm[j]; if (a.owner === b.owner || !inGuerra(a.owner, b.owner) || Math.hypot(a.x - b.x, a.y - b.y) > R_SCONTRO) continue;
     const ca = a.cid ? C(a.cid) : null, cb = b.cid ? C(b.cid) : null, terr = ca || cb; a.combatte = b.combatte = true;
     const ba = terr && terr.owner === a.owner ? 1.25 : 1, bb = terr && terr.owner === b.owner ? 1.25 : 1, fa = a.n * ba * techMul(a.owner) * (0.9 + 0.2 * rnd()), fb = b.n * bb * techMul(b.owner) * (0.9 + 0.2 * rnd()), tot = fa + fb || 1;
-    a.n -= Math.min(a.n, (a.n * K_SCONTRO * (fb / tot) + 50) * dtM); b.n -= Math.min(b.n, (b.n * K_SCONTRO * (fa / tot) + 50) * dtM);
+    a.n -= Math.min(a.n, (fb * K_SCONTRO + 50) * dtM); b.n -= Math.min(b.n, (fa * K_SCONTRO + 50) * dtM);
   }
   // armate contro guarnigioni e logoramento del territorio ostile
   for (const a of G.arm) {
@@ -266,24 +271,34 @@ function tickScontri(dtM) {
     a.n -= Math.min(a.n, (a.n * att + 25) * dtM);                                           // logoramento: partigiani, fame, malattie
     if (c.garr > 5) {
       a.combatte = true; const fa = a.n * techMul(a.owner) * (0.9 + 0.2 * rnd()), fg = c.garr * 1.25 * (0.9 + 0.2 * rnd()), tot = fa + fg || 1;
-      a.n -= Math.min(a.n, (a.n * K_SCONTRO * (fg / tot) + 30) * dtM); c.garr -= Math.min(c.garr, (c.garr * K_SCONTRO * (fa / tot) + 30) * dtM);
+      a.n -= Math.min(a.n, (fg * K_SCONTRO + 30) * dtM); c.garr -= Math.min(c.garr, (fa * K_SCONTRO + 30) * dtM);
     }
   }
   for (let i = G.arm.length - 1; i >= 0; i--) { const a = G.arm[i]; if (a.n < MIN_ARM) { if (a.owner === G.me) log(`Un'armata nostra è stata annientata${a.cid ? ' in ' + C(a.cid).n : ''}.`, 'bad'); else if (a.cid && C(a.cid).owner === G.me) log(`Abbiamo annientato un'armata di ${fName(a.owner)} in ${C(a.cid).n}.`, 'good'); eliminaArmata(a); } }
 }
+const SOGLIA_OCC = 0.55;   // quota del territorio da occupare per annettere il paese
+function liberaCelle(c) { const ci = IDX[c.id]; for (const idx of c.occList) OCC[idx] = -1; c.occList = []; c.cnt = {}; c.occ = null; occDirty = true; }
 function tickOccupazione(dtM) {
   for (const id of IDS) {
-    const c = C(id), dentro = G.arm.filter(a => a.cid === id), dif = dentro.filter(a => a.owner === c.owner).reduce((t, a) => t + a.n, 0);
-    const inv = {}; dentro.forEach(a => { if (a.owner !== c.owner && inGuerra(a.owner, c.owner)) inv[a.owner] = (inv[a.owner] || 0) + a.n; });
-    const forte = Object.keys(inv).sort((x, y) => inv[y] - inv[x])[0];
-    if (forte && dif <= 0 && c.garr < maxGarr(c) * 0.12 + 150) {
-      if (!c.occ || c.occ.owner !== forte) c.occ = { owner: forte, frac: 0 };
-      c.occ.frac += OCC_BASE * Math.min(1.6, inv[forte] / resist(c)) * dtM; if (c.occ.frac >= 1) cattura(c, forte);
-    } else if (c.occ) { c.occ.frac -= 0.4 * dtM; if (c.occ.frac <= 0) c.occ = null; }
+    const c = C(id), ci = IDX[id], dentro = G.arm.filter(a => a.cid === id), dif = dentro.filter(a => a.owner === c.owner).reduce((t, a) => t + a.n, 0);
+    const invA = dentro.filter(a => a.owner !== c.owner && inGuerra(a.owner, c.owner));
+    if (invA.length && dif <= 0 && c.garr < maxGarr(c) * 0.12 + 150) {
+      // invasione parziale: ogni armata occupa le zone intorno a dove si trova
+      for (const a of invA) {
+        const r = clamp(2.5 + Math.sqrt(a.n / 1000) * 0.9, 3, 14), rate = 150 * Math.min(1.6, a.n / resist(c)), k = rate * dtM * 2.2, m = Math.floor(k) + (rnd() < k % 1 ? 1 : 0), fi = IDX[a.owner];
+        for (let q = 0; q < m; q++) { const ang = rnd() * 6.2832, rr = r * Math.sqrt(rnd()), ix = Math.floor(a.x + Math.cos(ang) * rr), iy = Math.floor(a.y + Math.sin(ang) * rr); if (ix < 0 || iy < 0 || ix >= GRW || iy >= GRH) continue; const idx = iy * GRW + ix; if (GRID[idx] === ci && OCC[idx] < 0) { OCC[idx] = fi; c.occList.push(idx); c.cnt[a.owner] = (c.cnt[a.owner] || 0) + 1; occDirty = true; } }
+      }
+    } else if (c.occList.length && (!invA.length || dif > 0)) {   // senza occupanti (o con difensori) le zone tornano al legittimo proprietario
+      const m = Math.ceil(c.occList.length * 0.07 * dtM); for (let q = 0; q < m && c.occList.length; q++) { const idx = c.occList.pop(), o = OCC[idx]; OCC[idx] = -1; if (o >= 0) c.cnt[IDS[o]]--; occDirty = true; }
+    }
+    if (c.occList.length) {
+      let top = null, tc = 0; for (const o in c.cnt) if (c.cnt[o] > tc) { tc = c.cnt[o]; top = o; }
+      const pct = tc / Math.max(1, CELLS[ci]); if (top && tc > 0) { c.occ = { owner: top, frac: Math.min(1, pct / SOGLIA_OCC), pct }; if (pct >= SOGLIA_OCC) cattura(c, top); } else c.occ = null;
+    } else c.occ = null;
   }
 }
 function cattura(c, nuovo) {
-  const vecchio = c.owner; c.owner = nuovo; c.occ = null; c.unrest = Math.min(1, 0.6 + c.pop / 500); c.garr = maxGarr(c) * 0.1; G.ownDirty = true;
+  const vecchio = c.owner; liberaCelle(c); c.owner = nuovo; c.unrest = Math.min(1, 0.6 + c.pop / 500); c.garr = maxGarr(c) * 0.1; G.ownDirty = true;
   addRel(vecchio, nuovo, -0.3);
   if (nuovo === G.me) { log(`🏴 ${c.n} è nostra! Occupazione completata.`, 'big'); avvisa(`🏴 ${c.n} conquistata!`); } else if (vecchio === G.me) { log(`💥 ${c.n} è caduta in mano a ${fName(nuovo)}.`, 'bad'); avvisa(`💥 ${c.n} è caduta!`); } else log(`${fName(nuovo)} conquista ${c.n}.`);
   const f = F(vecchio); if (f.cap === c.id) { const resta = ownedBy(vecchio).sort((a, b) => b.gdp - a.gdp)[0]; if (resta) f.cap = resta.id; }
@@ -291,7 +306,7 @@ function cattura(c, nuovo) {
   paintOne(c.id); panelDirty = true; controllaVittoria();
 }
 function rivolta(c) {
-  const chi = c.owner, f = F(c.id); c.owner = c.id; c.occ = null; c.unrest = 0; c.garr = maxGarr(c) * 0.7; G.ownDirty = true;
+  const chi = c.owner, f = F(c.id); liberaCelle(c); c.owner = c.id; c.unrest = 0; c.garr = maxGarr(c) * 0.7; G.ownDirty = true;
   if (!f.alive) { f.alive = true; f.cap = c.id; f.money = 0; f.queue = []; f.war = {}; } if (!ownedBy(c.id).length) { }
   dichiaraGuerra(c.id, chi, 'rivolta'); creaArmata(c.id, Math.max(MIN_ARM * 2, c.garr * 0.4), c.lx, c.ly);
   if (chi === G.me) { log(`🔥 Rivolta in ${c.n}: si è liberata dal nostro dominio e ci dichiara guerra!`, 'bad'); avvisa(`🔥 ${c.n} si ribella!`); } else log(`🔥 ${c.n} si ribella contro ${fName(chi)}.`, 'dip');
@@ -344,6 +359,7 @@ function aiBersaglio(id) {
   }
   if (!best) return null; return { fid: best, motivo: best === G.me ? (G.threat > 0.18 ? 'coalizione contro il dominio globale' : 'ambizioni territoriali') : 'ambizioni territoriali' };
 }
+function puntoLibero(cid, a) { const ci = IDX[cid], b = BB[ci]; let best = null, bd = 1e9; for (let q = 0; q < 40; q++) { const x = b[0] + rnd() * (b[2] - b[0]), y = b[1] + rnd() * (b[3] - b[1]), ix = Math.floor(x), iy = Math.floor(y); if (ix < 0 || iy < 0 || ix >= GRW || iy >= GRH) continue; const idx = iy * GRW + ix; if (GRID[idx] !== ci || OCC[idx] >= 0) continue; const d = Math.hypot(x - a.x, y - a.y); if (d > 5 && d < bd) { bd = d; best = { x, y }; } } return best; }
 function aiMuovi(id) {
   const f = F(id), nem = Object.keys(f.war).filter(e => F(e).alive); if (!nem.length) return; const mine = armiesOf(id);
   // difesa: armate nemiche in casa
@@ -352,6 +368,8 @@ function aiMuovi(id) {
     let tgt = null, bd = 1e9;
     for (const e of nem) for (const b of armiesOf(e)) { if (b.cid && C(b.cid).owner === id) { const d = Math.hypot(b.x - a.x, b.y - a.y); if (d < bd) { bd = d; tgt = b; } } }
     if (tgt && bd < 220) { ordina(a, tgt.x, tgt.y); continue; }
+    const cc = a.cid ? C(a.cid) : null;   // armata ferma in un paese nemico non ancora conquistato: si sposta nelle zone libere
+    if (cc && nem.includes(cc.owner) && CELLS[IDX[cc.id]] > 120) { const pl = puntoLibero(cc.id, a); if (pl) { ordina(a, pl.x, pl.y); continue; } }
     // attacco: il paese nemico piu' conveniente
     let best = null, bs = -1;
     for (const c of M.c) { const rc = C(c.id); if (!nem.includes(rc.owner)) continue; const d = Math.hypot(rc.lx - a.x, rc.ly - a.y), debol = (rc.garr + 1) / (a.n + 1), sc = 1 / (1 + d / 80) / (0.5 + debol); if (sc > bs && debol < 1.6) { bs = sc; best = rc; } }
@@ -415,6 +433,9 @@ function paintMap() { for (const id of IDS) paintOne(id); }
 function resizeMap() { const r = SVG.getBoundingClientRect(); scaleBase = Math.min(r.width / W, r.height / H) || 1; renderLabels(); }
 function applyView() { CAM.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`); renderLabels(); }
 function clampView() { view.k = clamp(view.k, 1, 14); const r = SVG.getBoundingClientRect(), offx = (r.width / scaleBase - W) / 2, offy = (r.height / scaleBase - H) / 2; view.x = clamp(view.x, W - W * view.k - offx - 30, -offx * 0 + 30 + offx); view.y = clamp(view.y, H - H * view.k - offy - 30, 30 + offy); }
+const occCv = document.createElement('canvas'); occCv.width = GRW; occCv.height = GRH; const occCtx = occCv.getContext('2d'), occImg = el('image', { x: 0, y: 0, width: GRW, height: GRH, 'pointer-events': 'none', preserveAspectRatio: 'none' }); CAM.insertBefore(occImg, gOcc);
+const rgbC = {}, tcx = document.createElement('canvas').getContext('2d'); function rgbOf(o) { if (!rgbC[o]) { tcx.clearRect(0, 0, 1, 1); tcx.fillStyle = F(IDS[o]).color; tcx.fillRect(0, 0, 1, 1); rgbC[o] = tcx.getImageData(0, 0, 1, 1).data.slice(0, 3); } return rgbC[o]; }
+function drawOcc() { occDirty = false; const im = occCtx.createImageData(GRW, GRH), d = im.data; for (let i = 0; i < OCC.length; i++) { const o = OCC[i]; if (o < 0) continue; const c = rgbOf(o); d[4 * i] = c[0]; d[4 * i + 1] = c[1]; d[4 * i + 2] = c[2]; d[4 * i + 3] = 225; } occCtx.putImageData(im, 0, 0); occImg.setAttribute('href', occCv.toDataURL()); }
 function renderLabels() {
   const lim = 14 + Math.pow(view.k, 1.7) * 14, fs = clamp(7.2 / Math.pow(view.k, 0.82), 1.6, 8);
   for (const id in lblEls) { const t = lblEls[id], show = +t.dataset.rank < lim && C(id).owner === id; t.style.display = show ? '' : 'none'; if (show) { t.setAttribute('font-size', fs); t.setAttribute('stroke-width', fs * 0.28); } }
@@ -468,7 +489,7 @@ function renderPanel() {
   if (c) {
     const o = c.owner, mio = o === me, mg = maxGarr(c); h += `<div class="card"><h3><span class="dot" style="background:${F(o).color}"></span>${c.n}</h3>`;
     h += `<div class="row"><span>Continente</span><b>${c.k}</b></div><div class="row"><span>Governo</span><b>${fName(o)}</b></div><div class="row"><span>Rapporti</span>${statoRel(me, o)}</div>`;
-    h += `<div class="row"><span>Popolazione</span><b>${c.pop >= 100 ? nf(c.pop) : c.pop.toFixed(1).replace('.', ',')} mln</b></div><div class="row"><span>PIL</span><b>${money(c.gdp)}</b></div><div class="row"><span>Guarnigione</span><b>${nk(c.garr)} / ${nk(mg)}</b></div>`;
+    h += `<div class="row"><span>Popolazione</span><b>${c.pop >= 100 ? nf(c.pop) : c.pop.toFixed(1).replace('.', ',')} mln</b></div><div class="row"><span>PIL</span><b>${money(c.gdp)}</b></div><div class="row"><span>Guarnigione</span><b>${nk(c.garr)} / ${nk(mg)}</b></div>${c.occ ? `<div class="row"><span>Occupato da ${fName(c.occ.owner)}</span><b>${Math.round(c.occ.pct * 100)}% (annessione al ${SOGLIA_OCC * 100}%)</b></div>` : ''}`;
     if (mio) {
       h += `<div class="row"><span>Richiamabili</span><b>${nk(c.man)}</b></div>${c.unrest > 0.05 ? `<div class="row"><span>Malcontento</span><b style="color:#ff9d9d">${Math.round(c.unrest * 100)}%</b></div><div class="bar"><i style="width:${c.unrest * 100}%;background:#e05263"></i></div>` : ''}<div class="btns"><button class="small" data-act="openrec">🪖 Arruola qui</button></div>`;
     } else {
@@ -507,10 +528,10 @@ function onAct(e) {
   else if (act === 'trans') { const o = C(G.selC).owner, costo = +b.dataset.v; if (F(me).money >= costo) { F(me).money -= costo; chiediTransito(me, o, true); } }
   else if (act === 'split') { const a = G.arm.find(x => x.id === G.selA); if (a) { const n = dividiArmata(a, v); if (n) G.selA = n.id; else avvisa('Armata troppo piccola per dividerla'); } }
   else if (act === 'stop') { const a = G.arm.find(x => x.id === G.selA); if (a) { a.tx = a.x; a.ty = a.y; a.path = []; } } else if (act === 'ric') { const k = b.dataset.k; if (G.res.lv[k] < 3) G.res.cur = k; }
-  else if (act === 'desel') { G.selA = null; SVG.classList.remove('armata'); } else if (act === 'close') { G.ui = null; } else if (act === 'openrec') { G.ui = 'esercito'; } else if (act === 'selarm') { const q = G.arm.find(x => x.id === v); if (q) { G.selA = q.id; if (q.cid) G.selC = q.cid; paintMap(); } }
+  else if (act === 'desel') { G.selA = null; SVG.classList.remove('armata'); } else if (act === 'close') { G.ui = null; } else if (act === 'askwar') { if (G.ask) dichiaraGuerra(me, C(G.ask).owner); nascondiAsk(); } else if (act === 'askno') { nascondiAsk(); } else if (act === 'openrec') { G.ui = 'esercito'; } else if (act === 'selarm') { const q = G.arm.find(x => x.id === v); if (q) { G.selA = q.id; if (q.cid) G.selC = q.cid; paintMap(); } }
   panelDirty = true;
 }
-$('panel').onclick = onAct; $('abar').onclick = onAct;
+$('panel').onclick = onAct; $('ask').onclick = onAct; $('abar').onclick = onAct;
 function renderLog() { $('log').innerHTML = G.log.slice(0, 6).map(l => `<div class="${l.cls}">${MESI[l.m]} ${l.a}: ${l.txt}</div>`).join(''); }
 
 /* ======================= INPUT ======================= */
@@ -532,12 +553,15 @@ SVG.addEventListener('pointerleave', () => { $('tip').style.opacity = 0; });
 SVG.addEventListener('pointerup', e => { const d = drag; drag = null; prev.style.display = 'none'; if (d && d.army && d.moved && G.fase === 'play') { const q = puntoMappa(e.clientX, e.clientY); d.pts.push(q); G.selA = d.army.id; ordinaPercorso(d.army, d.pts.slice(1)); const id = countryAt(q.x, q.y); if (id) G.selC = id; SVG.classList.add('armata'); selez(); return; } if (!d || d.moved || G.fase !== 'play') return; clickMappa(e.clientX, e.clientY, e.button === 2); });
 SVG.addEventListener('contextmenu', e => { e.preventDefault(); if (G.fase === 'play') clickMappa(e.clientX, e.clientY, true); });
 SVG.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.2 : 1 / 1.2); }, { passive: false });
+function chiediGuerra(id) { const c = C(id), o = c.owner; G.ask = id; const a = $('ask'); a.innerHTML = `<b>Dichiarare guerra a ${fName(o)}?</b><div class="hint" style="margin:4px 0 8px">${c.n} · guarnigione ${nk(c.garr)} · esercito ${nk(troopsOf(o))}.<br>L'armata resta dov'è: dopo la dichiarazione potrai mandarla.</div><div class="btns" style="margin-top:0"><button class="small danger" data-act="askwar">⚔️ Dichiara guerra</button><button class="small ghost" data-act="askno">Annulla</button></div>`; a.style.display = 'block'; }
+function nascondiAsk() { G.ask = null; $('ask').style.display = 'none'; }
 function clickMappa(cx, cy, destro) {
+  if (G.ask) nascondiAsk();
   const p = puntoMappa(cx, cy), ku = 1 / (scaleBase * view.k); let hit = null, bd = 1e9;
   for (const a of G.arm) { const d = Math.hypot(a.x - p.x, a.y - p.y); if (d < raggioPx(a) * ku * 1.25 && d < bd) { bd = d; hit = a; } }
   const sel = G.arm.find(a => a.id === G.selA);
   if (hit && !destro && (!sel || hit.id !== sel.id || true)) { G.selA = hit.id; if (hit.cid) G.selC = hit.cid; if (hit.owner !== G.me) G.ui = 'paese'; SVG.classList.toggle('armata', hit.owner === G.me); selez(); return; }
-  if (sel && sel.owner === G.me) { ordina(sel, p.x, p.y); const id = countryAt(p.x, p.y); if (id) { G.selC = id; selez(); } panelDirty = true; return; }
+  if (sel && sel.owner === G.me) { const id = countryAt(p.x, p.y); if (id) { G.selC = id; const o = C(id).owner; if (o !== G.me && !inGuerra(G.me, o)) { chiediGuerra(id); selez(); return; } selez(); } ordina(sel, p.x, p.y); panelDirty = true; return; }
   const id = countryAt(p.x, p.y); if (id) { G.selC = id; G.selA = null; G.ui = 'paese'; SVG.classList.remove('armata'); selez(); } else if (G.ui === 'paese') { G.ui = null; G.selA = null; selez(); }
 }
 function selez() { paintMap(); panelDirty = true; renderArmate(); }
@@ -561,6 +585,7 @@ function menuIniziale() {
 let last = performance.now(), uiT = 0;
 function loop(now) {
   if (bordDirty) reorderPaths();
+  if (occDirty && now - (loop.lo || 0) > 250) { loop.lo = now; drawOcc(); }
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (G.fase === 'play' && G.vel > 0) { const dtM = dt * 1000 / MS_MESE * VELS[G.vel], n = Math.max(1, Math.ceil(dtM / 0.05)); for (let i = 0; i < n; i++) tick(dtM / n); }
   if (G.fase === 'play' || G.fase === 'fine') { renderArmate(); uiT -= dt; if (uiT <= 0 || panelDirty || logDirty) { uiT = 0.3; renderStats(); if (panelDirty) { renderPanel(); panelDirty = false; } if (logDirty) { renderLog(); logDirty = false; } } }
