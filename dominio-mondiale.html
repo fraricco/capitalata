@@ -50,7 +50,7 @@
   .pick button { background: rgba(255,255,255,.08); color: var(--text); border: 1px solid var(--border); text-align: left; font-size: .8rem; padding: 6px 8px; } .pick button.sel { background: var(--gold); color: #10233a; }
   .pick button small { display: block; opacity: .65; font-weight: 400; font-size: .68rem; }
   .diffs { display: flex; gap: 8px; margin: 8px 0 14px; } .diffs button { flex: 1; background: rgba(255,255,255,.08); color: var(--text); border: 1px solid var(--border); } .diffs button.sel { background: var(--gold); color: #10233a; }
-  .path { stroke: #06121e; stroke-width: .35; stroke-linejoin: round; cursor: pointer; } .path:hover { filter: brightness(1.22); } .path.sel { stroke: #fff; stroke-width: 1.2; } .path.mine { stroke: #ffd27d; stroke-width: .6; }
+  .path { stroke-width: .9; stroke-linejoin: round; cursor: pointer; } .path:hover { filter: brightness(1.22); } .path.sel { filter: brightness(1.4); }
   .lbl { font-weight: 700; fill: rgba(255,255,255,.88); text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: rgba(0,0,0,.6); }
   .armtx { font-weight: 800; fill: #fff; text-anchor: middle; dominant-baseline: central; pointer-events: none; paint-order: stroke; stroke: rgba(0,0,0,.7); }
   @media (max-width: 900px) { .stat.opt { display: none; } .log { width: 60%; max-height: 90px; } }
@@ -144,7 +144,7 @@ function gdpOf(fid) { return ownedBy(fid).reduce((t, c) => t + c.gdp, 0); }
 function strength(fid) { return troopsOf(fid) + queueOf(fid) * 0.5 + ownedBy(fid).reduce((t, c) => t + c.garr * 0.6, 0); }
 const worldGdp = () => IDS.reduce((t, id) => t + G.C[id].gdp, 0);
 function fName(fid) { const f = F(fid), n = ownedBy(fid).length; return n > 4 ? 'Impero ' + C(f.cap).n : C(f.cap) ? C(f.cap).n : f.name; }
-const maxGarr = c => (6000 * Math.sqrt(c.pop) + c.gdp * 8) * DIFFS[G.diff].garr;
+const maxGarr = c => (6000 * Math.sqrt(c.pop) + c.gdp * 8) * 0.55 * DIFFS[G.diff].garr;
 const resist = c => 3000 * Math.sqrt(c.pop) + 3000;
 
 function log(txt, cls) { G.log.unshift({ a: anno(), m: mese(), txt, cls: cls || '' }); if (G.log.length > 200) G.log.pop(); logDirty = true; }
@@ -200,8 +200,8 @@ function startGame(pid, diff) {
   G.F[pid].color = '#ffb347'; G.ownDirty = true;
   for (const id of IDS) { const f = F(id); f.money = income(id) * (id === pid ? 10 : 4); }
   // armate iniziali: i paesi piu' ricchi partono con un esercito mobile
-  [...M.c].sort((a, b) => b.gdp - a.gdp).slice(0, 70).forEach(c => { const rc = C(c.id); creaArmata(c.id, Math.max(MIN_ARM * 2, rc.garr * 0.5), rc.lx, rc.ly); });
-  if (!armiesOf(pid).length) { const rc = C(pid); creaArmata(pid, Math.max(MIN_ARM * 3, rc.garr * 0.6), rc.lx, rc.ly); }
+  [...M.c].sort((a, b) => b.gdp - a.gdp).slice(0, 70).forEach(c => { const rc = C(c.id); creaArmata(c.id, Math.max(MIN_ARM * 2, rc.garr * 0.9), rc.lx, rc.ly); });
+  if (!armiesOf(pid).length) { const rc = C(pid); creaArmata(pid, Math.max(MIN_ARM * 3, rc.garr * 0.9), rc.lx, rc.ly); }
   log(`Comincia la partita: guidi ${C(pid).n}. Obiettivo: dominare 2 continenti.`, 'big');
   $('overlay').classList.add('hidden'); buildMap(); applyView(); paintMap(); panelDirty = true; logDirty = true;
 }
@@ -400,11 +400,16 @@ function buildMap() {
   gC.innerHTML = ''; gLbl.innerHTML = ''; gOcc.innerHTML = '';
   const byArea = [...M.c].map(c => { let a = 0; for (const r of c.r) { let s = 0; for (let i = 0; i < r.length; i += 2) { const j = (i + 2) % r.length; s += r[i] * r[j + 1] - r[j] * r[i + 1]; } a += Math.abs(s / 2); } return { id: c.id, a }; }).sort((x, y) => y.a - x.a); const rank = {}; byArea.forEach((o, i) => rank[o.id] = i);
   for (const c of M.c) {
-    const p = el('path', { d: c.r.map(r => 'M' + r.map((v, i) => (i % 2 ? ',' : (i ? 'L' : '')) + v).join('') + 'Z').join(''), 'fill-rule': 'evenodd', class: 'path', 'data-id': c.id }); gC.appendChild(p); paths[c.id] = p;
+    const p = el('path', { d: c.r.map(r => 'M' + r.map((v, i) => (i % 2 ? ',' : (i ? 'L' : '')) + v).join('') + 'Z').join(''), 'fill-rule': 'evenodd', class: 'path', 'data-id': c.id }); const pd = el('path', { d: p.getAttribute('d'), 'fill-rule': 'evenodd', fill: 'none', stroke: '#06121e', 'stroke-width': 1.6, 'stroke-linejoin': 'round', 'pointer-events': 'none' }); gC.appendChild(pd); pdEls[c.id] = pd; gC.appendChild(p); paths[c.id] = p;
     const t = el('text', { x: c.lx, y: c.ly, class: 'lbl' }); t.textContent = c.n; t.dataset.rank = rank[c.id]; gLbl.appendChild(t); lblEls[c.id] = t;
   }
 }
-function paintOne(id) { const p = paths[id], c = C(id); if (!p) return; p.setAttribute('fill', F(c.owner).color); p.classList.toggle('mine', c.owner === G.me); p.classList.toggle('sel', G.selC === id); }
+let bordDirty = true; const pdEls = {};
+function reorderPaths() {   // per proprietario: prima i contorni scuri, poi i colori col bordo uguale al riempimento: i confini interni spariscono
+  bordDirty = false; const g = {}; for (const id of IDS) (g[C(id).owner] = g[C(id).owner] || []).push(id);
+  for (const o in g) { for (const id of g[o]) gC.appendChild(pdEls[id]); for (const id of g[o]) gC.appendChild(paths[id]); }
+}
+function paintOne(id) { const p = paths[id], c = C(id); if (!p) return; const col = F(c.owner).color; p.setAttribute('fill', col); p.setAttribute('stroke', col); p.classList.toggle('sel', G.selC === id); if (!G.selOnly) bordDirty = true; }
 function paintMap() { for (const id of IDS) paintOne(id); }
 function resizeMap() { const r = SVG.getBoundingClientRect(); scaleBase = Math.min(r.width / W, r.height / H) || 1; renderLabels(); }
 function applyView() { CAM.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`); renderLabels(); }
@@ -554,6 +559,7 @@ function menuIniziale() {
 /* ======================= CICLO PRINCIPALE ======================= */
 let last = performance.now(), uiT = 0;
 function loop(now) {
+  if (bordDirty) reorderPaths();
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (G.fase === 'play' && G.vel > 0) { const dtM = dt * 1000 / MS_MESE * VELS[G.vel], n = Math.max(1, Math.ceil(dtM / 0.05)); for (let i = 0; i < n; i++) tick(dtM / n); }
   if (G.fase === 'play' || G.fase === 'fine') { renderArmate(); uiT -= dt; if (uiT <= 0 || panelDirty || logDirty) { uiT = 0.3; renderStats(); if (panelDirty) { renderPanel(); panelDirty = false; } if (logDirty) { renderLog(); logDirty = false; } } }
@@ -562,7 +568,7 @@ function loop(now) {
 buildMapOnce();
 function buildMapOnce() { G.C = {}; G.F = {}; M.c.forEach((c, i) => { G.C[c.id] = { id: c.id, n: c.n, k: c.k, owner: c.id, garr: 0, unrest: 0, occ: null, pop: c.pop, gdp: c.gdp, nb: c.nb, lx: c.lx, ly: c.ly, man: 0 }; G.F[c.id] = { id: c.id, color: '#3a5a7a', war: {}, tr: {}, rel: {}, queue: [], cap: c.id, alive: true }; }); buildMap(); paintMap(); resizeMap(); }
 syncSpeed(); menuIniziale(); requestAnimationFrame(loop);
-window.__dm = { G, tick, startGame, creaArmata, ordina, dichiaraGuerra, faiPace, chiediTransito, countryAt, C, F, ownedBy, income, troopsOf, recluta, controllaVittoria, rivolta, view: () => view, clickMappa };
+window.__dm = { paintMap, G, tick, startGame, creaArmata, ordina, dichiaraGuerra, faiPace, chiediTransito, countryAt, C, F, ownedBy, income, troopsOf, recluta, controllaVittoria, rivolta, view: () => view, clickMappa };
 </script>
 </body>
 </html>
