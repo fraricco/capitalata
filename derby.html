@@ -572,7 +572,7 @@ const interPts = [];   // incroci agibili
 function buildInter() { interPts.length = 0; for (let i = 1; i < NBX; i++) for (let j = 1; j < NBZ; j++) { const x = -CW / 2 + i * CELL, z = -CD / 2 + j * CELL; if (!isWater(x, z) && !isWater(x + 40, z) && !isWater(x - 40, z) && !isWater(x, z + 40) && !isWater(x, z - 40)) interPts.push([x, z]); } }
 function newCar(kind, x, z, h, color) {
   const T = TYPES[kind], mesh = makeCarMesh(kind, color); scene.add(mesh);
-  const c = { kind, T, mesh, x, z, h, vx: 0, vz: 0, hp: T.hp, hpMax: T.hp, alive: true, turbo: 1, isP: kind === 'player', cd: 0, lastBy: null, lastT: -99, flash: 0, smk: 0, stuck: 0, rev: 0, wp: null, wpT: 0, inv: 0, steerPrev: 0 };
+  const c = { kind, T, mesh, x, z, h, vx: 0, vz: 0, hp: T.hp, hpMax: T.hp, alive: true, turbo: 1, isP: kind === 'player', cd: 0, lastBy: null, lastT: -99, flash: 0, smk: 0, stuck: 0, rev: 0, panic: 0, wp: null, wpT: 0, inv: 0, steerPrev: 0 };
   mesh.position.set(x, 0, z); mesh.rotation.y = -h; cars.push(c); return c;
 }
 function spawnAI() {
@@ -674,7 +674,7 @@ function collideCars(a, b) {
   const mx = (bi[0][0] + bi[1][0]) / 2, mz = (bi[0][1] + bi[1][1]) / 2; snd(clamp(s / 45, 0.06, 0.5), 0.3, 700); for (let q = 0; q < Math.min(6, s / 4); q++) flame(mx, 1 + RND(), mz, 0.7, 2.5, 0.3, '#ffd070', 0.9, 5);
   if (a.isP || b.isP) { shake = Math.max(shake, clamp(s / 35, 0.15, 1.1)); }
 }
-// ---------- intelligenza dei nemici ----------
+// ---------- le altre auto: traffico che gira per i fatti suoi (e scappa da te) ----------
 function routeTo(c, tx, tz) {
   // se la linea è libera vai dritto, altrimenti segui il reticolo delle strade
   let clear = true; const d = Math.hypot(tx - c.x, tz - c.z); for (let t = 0.1; t < 1 && clear; t += Math.max(0.05, 14 / (d + 1))) if (blockedAt(c.x + (tx - c.x) * t, c.z + (tz - c.z) * t)) clear = false;
@@ -686,20 +686,23 @@ function routeTo(c, tx, tz) {
 function aiInput(c, dt) {
   const inp = { thr: 1, steer: 0, hand: false, boost: false };
   const dP = me.alive ? Math.hypot(me.x - c.x, me.z - c.z) : 1e9; let tx, tz;
-  if (dP < 650 && me.alive) { tx = me.x + me.vx * 0.5; tz = me.z + me.vz * 0.5; c.wp = null; }
+  c.panic = Math.max(0, (c.panic || 0) - dt); let flee = false;
+  if (me.alive && (dP < 40 || (c.lastBy === 'player' && tAnim - c.lastT < 4))) c.panic = 3;      // se ti vedono arrivare scappano
+  if (c.panic > 0 && me.alive && dP > 0.5) { tx = c.x + (c.x - me.x) / dP * 140; tz = c.z + (c.z - me.z) / dP * 140; c.wp = null; flee = true; }
   else { if (!c.wp || Math.hypot(c.wp[0] - c.x, c.wp[1] - c.z) < 30 || (c.wpT -= dt) < 0) { const p = interPts[Math.floor(RND() * interPts.length)]; c.wp = [p[0], p[1]]; c.wpT = 25; } tx = c.wp[0]; tz = c.wp[1]; }
   // dall'altra parte del fiume: passa dal ponte più vicino
   const sd = (x, z) => z - riverZ(x) > 0, wantBr = sd(c.x, c.z) !== sd(tx, tz) && Math.abs(c.z - riverZ(c.x)) < 400;
   if (sd(c.x, c.z) !== sd(tx, tz)) { let bx = BR[0]; for (const b of BR) if (Math.abs(b - c.x) < Math.abs(bx - c.x)) bx = b; if (Math.hypot(bx - c.x, riverZ(bx) - c.z) > 40) { tx = bx; tz = riverZ(bx) + (sd(c.x, c.z) ? 95 : -95) * 0.0 + (sd(c.x, c.z) ? 100 : -100); } else { tz = tz; } }
   const [wx, wz] = routeTo(c, tx, tz), ang = Math.atan2(wx - c.x, -(wz - c.z)), diff = wrapPi(ang - c.h);
-  inp.steer = clamp(diff * 2.2, -1, 1); const sp = Math.hypot(c.vx, c.vz); inp.thr = Math.abs(diff) > 1.7 ? 0.35 : 1; if (Math.abs(diff) > 0.9 && sp > 16) inp.thr = 0.2;
+  inp.steer = clamp(diff * 2.2, -1, 1); const sp = Math.hypot(c.vx, c.vz), cruise = c.T.vmax * (flee ? 0.95 : 0.5); inp.thr = Math.abs(diff) > 1.7 ? 0.35 : 1; if (Math.abs(diff) > 0.9 && sp > 14) inp.thr = 0.2; if (sp > cruise) inp.thr = 0;
   // sensori anteriori
   const fxv = Math.sin(c.h), fzv = -Math.cos(c.h), L = 7 + sp * 0.55, pr = (a) => { const hh = c.h + a; return blockedAt(c.x + Math.sin(hh) * L, c.z - Math.cos(hh) * L); };
   const bF = pr(0), bL = pr(-0.55), bR = pr(0.55);
   if (bF || (bL && bR)) { inp.thr = sp > 9 ? -0.6 : 0.3; inp.steer = bL === bR ? (c.steerPrev || 1) : (bL ? 1 : -1); } else if (bL) { inp.steer = Math.max(inp.steer, 0.6); } else if (bR) { inp.steer = Math.min(inp.steer, -0.6); }
   if (sp < 1.4 && inp.thr > 0.2) c.stuck += dt; else c.stuck = Math.max(0, c.stuck - dt); if (c.stuck > 1.1) { c.rev = 1.1; c.stuck = 0; c.wp = null; }
   if (c.rev > 0) { c.rev -= dt; inp.thr = -1; inp.steer = -(c.steerPrev || 1); }
-  c.steerPrev = inp.steer || c.steerPrev; inp.thr *= 0.55 + 0.45 * clamp(runT / 90, 0.2, 1);
+  for (const o of cars) { if (o === c || !o.alive) continue; const rx = o.x - c.x, rz = o.z - c.z, d = Math.hypot(rx, rz); if (d < 14 && (rx * fxv + rz * fzv) / (d + 0.01) > 0.7) { inp.thr = Math.min(inp.thr, sp > 7 ? -0.5 : 0); break; } }   // non tampona chi ha davanti
+  c.steerPrev = inp.steer || c.steerPrev;
   return inp;
 }
 // ---------- aggiornamento ----------
@@ -806,7 +809,7 @@ function drawHUD() {
   ctx.font = 'bold 12px sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText('CARROZZERIA', pad + 12, pad + 76);
   const hf = clamp(me.hp / me.hpMax, 0, 1); ctx.fillStyle = 'rgba(255,255,255,.18)'; rr(pad + 12, pad + 82, 200, 11, 5); ctx.fill(); ctx.fillStyle = hf > 0.5 ? '#4fe08a' : hf > 0.25 ? '#ffb040' : '#ff4a3a'; rr(pad + 12, pad + 82, Math.max(6, 200 * hf), 11, 5); ctx.fill();
   ctx.fillStyle = '#fff'; ctx.fillText('TURBO (Maiusc)', pad + 12, pad + 111); ctx.fillStyle = 'rgba(255,255,255,.18)'; rr(pad + 12, pad + 116, 200, 9, 4); ctx.fill(); ctx.fillStyle = '#6ab8ff'; rr(pad + 12, pad + 116, Math.max(5, 200 * me.turbo), 9, 4); ctx.fill();
-  ctx.fillStyle = '#ffb347'; ctx.font = 'bold 12px sans-serif'; ctx.fillText('Nemici: ' + (cars.length - (me.alive ? 1 : 0)), pad + 12, pad + 142);
+  ctx.fillStyle = '#ffb347'; ctx.font = 'bold 12px sans-serif'; ctx.fillText('Auto in giro: ' + (cars.length - (me.alive ? 1 : 0)), pad + 12, pad + 142);
   ctx.fillStyle = 'rgba(8,16,28,.62)'; rr(vw / 2 - 120, pad, 240, 50, 12); ctx.fill(); ctx.textAlign = 'center'; ctx.fillStyle = '#ffd166'; ctx.font = 'bold 24px sans-serif'; ctx.fillText(score.toLocaleString('it-IT') + ' pt', vw / 2, pad + 28);
   ctx.fillStyle = '#fff'; ctx.font = '12px sans-serif'; ctx.fillText('Auto distrutte: ' + kills + ' · Record: ' + best.toLocaleString('it-IT') + (combo > 1 ? ' · COMBO ×' + combo : ''), vw / 2, pad + 44);
   if (demol) { ctx.textAlign = 'left'; ctx.fillStyle = '#ff8a4a'; ctx.font = 'bold 13px sans-serif'; ctx.fillText('💥 Città distrutta: ' + (100 * destVol / Math.max(1, totalVol)).toFixed(2) + '%', pad, pad + 172); }
@@ -826,7 +829,7 @@ function showPanel(html) { panel.innerHTML = html; overlay.classList.remove('hid
 let timeIdx = 0;
 function showMenu() {
   mode = 'menu';
-  showPanel(`<h1>🚗 Derby a Torrenia</h1><p>Guida un'auto blindata per la città e <b>sfascia le altre auto</b>: la tua carrozzeria regge molto più delle loro. Ogni auto distrutta ti dà punti, e più ne distruggi di fila più valgono (<b>combo</b>).</p>
+  showPanel(`<h1>🚗 Derby a Torrenia</h1><p>Guida un'auto blindata per la città e <b>vai a caccia delle altre auto</b>: loro girano per i fatti loro e scappano se ti vedono arrivare, sei tu a speronarle. La tua carrozzeria regge molto più della loro. Ogni auto distrutta ti dà punti, e più ne distruggi di fila più valgono (<b>combo</b>).</p>
     <p style="margin-bottom:2px"><b>Modalità</b></p><div class="opts" id="mO"><button data-m="0" class="${demol ? '' : 'sel'}">🚗 Derby<small>gli edifici sono solidi: ti fermi e ti fai male</small></button><button data-m="1" class="${demol ? 'sel' : ''}">🏢 Demolizione<small>se ti schianti contro un edificio, crolla!</small></button></div>
     <p style="margin-bottom:2px"><b>Ora del giorno</b></p><div class="opts" id="tO">${TIMES.map((t, i) => `<button data-i="${i}" class="${i === timeIdx ? 'sel' : ''}">${t.ic} ${t.n}</button>`).join('')}</div>
     <p style="margin-bottom:2px"><b>⚖️ Pedana Wii Balance Board</b> (facoltativa)</p>
