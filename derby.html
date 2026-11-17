@@ -703,9 +703,60 @@ function aiInput(c, dt) {
   return inp;
 }
 // ---------- aggiornamento ----------
+// ---------- pedana Wii Balance Board (WebHID) e gamepad ----------
+const WB = { dev: null, status: navigator.hid ? 'non collegata' : 'non disponibile in questo browser (usa Chrome o Edge)', cal: new Uint8Array(32), calGot: 0, kg: [0, 0, 0, 0], total: 0, cx: 0, cy: 0, cx0: 0, cy0: 0, sens: 1, inv: false, st: 'idle', acc: [0, 0, 0], accT: 0, sim: null, steer: 0, thr: 0 };
+const hidPad = n => { const a = new Uint8Array(n); return a; };
+async function wbSend(id, bytes, len) { const a = new Uint8Array(len); a.set(bytes); await WB.dev.sendReport(id, a); }
+async function wbConnect() {
+  try {
+    if (!navigator.hid) { WB.status = 'WebHID non disponibile: usa Chrome o Edge (anche il sito deve essere https)'; return; }
+    const devs = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x057e, productId: 0x0306 }, { vendorId: 0x057e, productId: 0x0330 }] }); if (!devs.length) return;
+    const d = devs[0]; if (!d.opened) await d.open(); WB.dev = d; WB.calGot = 0; d.addEventListener('inputreport', wbReport);
+    WB.status = 'collegata, preparo i sensori…';
+    await wbSend(0x16, [0x04, 0xa4, 0x00, 0xf0, 0x01, 0x55], 21); await wbSend(0x16, [0x04, 0xa4, 0x00, 0xfb, 0x01, 0x00], 21);   // attiva l'estensione
+    await wbSend(0x17, [0x04, 0xa4, 0x00, 0x24, 0x00, 0x20], 6);                                                                   // legge la taratura
+    await wbSend(0x12, [0x04, 0x32], 2); await wbSend(0x11, [0x10], 1);                                                           // dati continui + LED
+    WB.status = 'collegata — sali sulla pedana';
+  } catch (e) { WB.status = 'errore: ' + (e && e.message ? e.message : e); WB.dev = null; }
+}
+function wbReport(ev) {
+  const d = ev.data, id = ev.reportId;
+  if (id === 0x21 && d.byteLength >= 21) {   // blocco di taratura
+    const n = (d.getUint8(2) >> 4) + 1, addr = d.getUint16(3), off = addr - 0x24; if ((d.getUint8(2) & 0x0f) === 0 && off >= 0 && off + n <= 32) { for (let i = 0; i < n; i++) WB.cal[off + i] = d.getUint8(5 + i); WB.calGot |= off === 0 ? 1 : 2; }
+  } else if (id === 0x32 && d.byteLength >= 10 && WB.calGot === 3) {
+    const c = i => (WB.cal[i * 2] << 8) | WB.cal[i * 2 + 1], raw = [0, 1, 2, 3].map(i => (d.getUint8(2 + i * 2) << 8) | d.getUint8(3 + i * 2));
+    WB.kg = raw.map((r, i) => { const c0 = c(i), c17 = c(4 + i), c34 = c(8 + i); return r < c17 ? 17 * (r - c0) / Math.max(1, c17 - c0) : 17 + 17 * (r - c17) / Math.max(1, c34 - c17); });   // ordine: alto-destra, basso-destra, alto-sinistra, basso-sinistra
+    wbUpdate(performance.now());
+  }
+}
+function wbUpdate(now) {
+  const [tr, br, tl, bl] = WB.kg.map(v => Math.max(0, v)), tot = tr + br + tl + bl; WB.total = tot;
+  if (tot < 8) { WB.st = 'idle'; WB.steer = WB.thr = 0; WB.cx = WB.cy = 0; if (WB.dev) WB.status = 'collegata — sali sulla pedana (lato col pulsante verso la TV)'; return; }
+  const cx = ((tr + br) - (tl + bl)) / tot * (WB.inv ? -1 : 1), cy = ((tr + tl) - (br + bl)) / tot * (WB.inv ? -1 : 1);
+  WB.cx += (cx - WB.cx) * 0.35; WB.cy += (cy - WB.cy) * 0.35;
+  if (WB.st === 'idle') { WB.st = 'zero'; WB.accT = now; WB.acc = [0, 0, 0]; WB.status = 'resta fermo un attimo…'; }
+  if (WB.st === 'zero') { WB.acc[0] += cx; WB.acc[1] += cy; WB.acc[2]++; if (now - WB.accT > 1400 && WB.acc[2] > 5) { WB.cx0 = WB.acc[0] / WB.acc[2]; WB.cy0 = WB.acc[1] / WB.acc[2]; WB.st = 'on'; WB.status = 'pronta! ' + tot.toFixed(0) + ' kg'; } WB.steer = WB.thr = 0; return; }
+  wbMap();
+}
+function wbMap() {
+  const dz = v => Math.abs(v) < 0.14 ? 0 : Math.sign(v) * (Math.abs(v) - 0.14) / 0.86, k = WB.sens;
+  WB.steer = clamp(dz(clamp((WB.cx - WB.cx0) / (0.16 / k), -1, 1)), -1, 1); WB.thr = clamp(dz(clamp((WB.cy - WB.cy0) / (0.14 / k), -1, 1)), -1, 1);
+}
+function wbZero() { if (WB.sim) { WB.cx0 = 0; WB.cy0 = 0; return; } if (WB.total >= 8) { WB.cx0 = WB.cx; WB.cy0 = WB.cy; WB.st = 'on'; toast('⚖️ Pedana azzerata', 1.4); } }
+function wbSimMove(e, cv) { const r = cv.getBoundingClientRect(); WB.sim = { x: clamp((e.clientX - r.left) / r.width * 2 - 1, -1, 1), y: clamp(-((e.clientY - r.top) / r.height * 2 - 1), -1, 1) }; WB.cx = WB.sim.x * 0.3; WB.cy = WB.sim.y * 0.3; WB.cx0 = 0; WB.cy0 = 0; WB.total = 30; WB.st = 'on'; wbMap(); }
+const wbActive = () => WB.st === 'on' && (WB.dev || WB.sim);
+function drawWBPad(cv, big) {
+  const g = cv.getContext('2d'), w = cv.width, h = cv.height; g.clearRect(0, 0, w, h); g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(0, 0, w, h); g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 1; g.strokeRect(0.5, 0.5, w - 1, h - 1);
+  g.beginPath(); g.moveTo(w / 2, 0); g.lineTo(w / 2, h); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke(); const dzw = w * 0.07; g.strokeStyle = 'rgba(255,255,255,.3)'; g.strokeRect(w / 2 - dzw, h / 2 - dzw, dzw * 2, dzw * 2);
+  const px = w / 2 + clamp((WB.cx - WB.cx0) / (0.16 / WB.sens), -1, 1) * w * 0.45, py = h / 2 - clamp((WB.cy - WB.cy0) / (0.14 / WB.sens), -1, 1) * h * 0.45; g.fillStyle = WB.st === 'on' ? '#ffb347' : '#8899aa'; g.beginPath(); g.arc(px, py, big ? 8 : 5, 0, 7); g.fill();
+  if (big) { g.fillStyle = '#fff'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText('GAS', w / 2, 12); g.fillText('FRENO', w / 2, h - 4); g.textAlign = 'left'; g.fillText('SX', 4, h / 2 - 4); g.textAlign = 'right'; g.fillText('DX', w - 4, h / 2 - 4); }
+}
 function playerInput() {
   const up = keys.KeyW || keys.ArrowUp, dn = keys.KeyS || keys.ArrowDown, lf = keys.KeyA || keys.ArrowLeft, rt = keys.KeyD || keys.ArrowRight;
-  return { thr: clamp((up ? 1 : 0) - (dn ? 1 : 0) - touch.sy, -1, 1), steer: clamp((rt ? 1 : 0) - (lf ? 1 : 0) + touch.sx, -1, 1), hand: !!(keys.Space || touch.hand), boost: !!(keys.ShiftLeft || keys.ShiftRight || touch.turbo) };
+  let thr = clamp((up ? 1 : 0) - (dn ? 1 : 0) - touch.sy, -1, 1), steer = clamp((rt ? 1 : 0) - (lf ? 1 : 0) + touch.sx, -1, 1), hand = !!(keys.Space || touch.hand), boost = !!(keys.ShiftLeft || keys.ShiftRight || touch.turbo) || (wbActive() && WB.thr > 0.97);
+  if (wbActive()) { if (Math.abs(WB.steer) > 0.01) steer = WB.steer; if (Math.abs(WB.thr) > 0.01 && !up && !dn) thr = WB.thr; }
+  try { const gp = (navigator.getGamepads && [...navigator.getGamepads()].find(q => q && q.connected)); if (gp) { const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0; if (Math.abs(ax) > 0.15) steer = ax; if (Math.abs(ay) > 0.15 && !up && !dn) thr = -ay; if (gp.buttons[0] && gp.buttons[0].pressed) hand = true; if (gp.buttons[1] && gp.buttons[1].pressed) boost = true; } } catch (e) {}
+  return { thr, steer, hand, boost };
 }
 let camH = 0, camInit = false;
 function updateGame(dt) {
@@ -740,7 +791,7 @@ function updateEngine() {
 }
 function update(dt) {
   tAnim += dt; if (toastT > 0) toastT -= dt;
-  if (mode === 'menu') { camera.position.set(Math.sin(tAnim * 0.1) * 500, 150, -300 + Math.cos(tAnim * 0.1) * 400); camera.lookAt(0, 20, -100); updateSkyObjects(dt); updateParticles(dt); updateDirty(); return; }
+  if (mode === 'menu') { const wc = document.getElementById('wbc'); if (wc) { drawWBPad(wc, true); const sE = document.getElementById('wbS'); if (sE) sE.textContent = 'Stato: ' + (WB.sim ? 'prova con il mouse' : WB.status); } camera.position.set(Math.sin(tAnim * 0.1) * 500, 150, -300 + Math.cos(tAnim * 0.1) * 400); camera.lookAt(0, 20, -100); updateSkyObjects(dt); updateParticles(dt); updateDirty(); return; }
   if (paused || mode !== 'play') return;
   updateGame(dt); updateFalling(dt); updateFires(dt); updateParticles(dt); updateFx(dt); updateDirty(); processRubble(); updateEngine(); shake = Math.max(0, shake - dt * 1.6); flashT = Math.max(0, flashT - dt * 1.4); updateCamera(dt);
 }
@@ -767,6 +818,7 @@ function drawHUD() {
   for (const c of cars) { if (c.isP || !c.alive) continue; ctx.fillStyle = '#ff3a3a'; ctx.beginPath(); ctx.arc(mx + (c.x + CW / 2) * k, my + (c.z + CD / 2) * k, 2.4, 0, 7); ctx.fill(); }
   for (const p of pickups) { ctx.fillStyle = '#46e07a'; ctx.fillRect(mx + (p.x + CW / 2) * k - 2, my + (p.z + CD / 2) * k - 2, 4, 4); }
   ctx.save(); ctx.translate(mx + (me.x + CW / 2) * k, my + (me.z + CD / 2) * k); ctx.rotate(me.h); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(-4, 5); ctx.lineTo(4, 5); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+  if (WB.dev || WB.st === 'on') { const sz = 70, bx = pad, by = vh - sz - pad - 6; ctx.save(); ctx.translate(bx, by); const t = document.createElement('canvas'); t.width = t.height = sz; drawWBPad(t, false); ctx.globalAlpha = 0.85; ctx.drawImage(t, 0, 0); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left'; ctx.fillText(WB.st === 'zero' ? 'resta fermo…' : WB.st === 'on' ? '⚖️ pedana · B azzera' : '⚖️ sali sulla pedana', 0, -4); ctx.restore(); }
   if (flashT > 0.02) { ctx.fillStyle = `rgba(255,247,226,${Math.min(0.5, flashT)})`; ctx.fillRect(0, 0, vw, vh); }
 }
 // ---------- menu e input ----------
@@ -777,12 +829,17 @@ function showMenu() {
   showPanel(`<h1>🚗 Derby a Torrenia</h1><p>Guida un'auto blindata per la città e <b>sfascia le altre auto</b>: la tua carrozzeria regge molto più delle loro. Ogni auto distrutta ti dà punti, e più ne distruggi di fila più valgono (<b>combo</b>).</p>
     <p style="margin-bottom:2px"><b>Modalità</b></p><div class="opts" id="mO"><button data-m="0" class="${demol ? '' : 'sel'}">🚗 Derby<small>gli edifici sono solidi: ti fermi e ti fai male</small></button><button data-m="1" class="${demol ? 'sel' : ''}">🏢 Demolizione<small>se ti schianti contro un edificio, crolla!</small></button></div>
     <p style="margin-bottom:2px"><b>Ora del giorno</b></p><div class="opts" id="tO">${TIMES.map((t, i) => `<button data-i="${i}" class="${i === timeIdx ? 'sel' : ''}">${t.ic} ${t.n}</button>`).join('')}</div>
+    <p style="margin-bottom:2px"><b>⚖️ Pedana Wii Balance Board</b> (facoltativa)</p>
+    <div style="display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;margin:6px 0 12px"><canvas id="wbc" width="120" height="120" style="border-radius:8px;cursor:crosshair;touch-action:none" title="Trascina qui per provare senza pedana"></canvas>
+      <div style="text-align:left;font-size:.85rem;line-height:1.5"><button class="big" id="bWb" style="font-size:.9rem;padding:8px 14px">Collega pedana</button> <button class="big" id="bWz" style="font-size:.9rem;padding:8px 14px;background:rgba(255,255,255,.2);color:#fff">Azzera</button><br><span id="wbS"></span><br>Sensibilità: <select id="wbK"><option value="0.7">bassa</option><option value="1" selected>media</option><option value="1.5">alta</option></select> <label><input type="checkbox" id="wbI"> inverti avanti/indietro</label><br><small style="opacity:.75">Pulsante della pedana verso la TV. Peso avanti = gas, indietro = freno, ai lati = sterzo. Puoi provare senza pedana trascinando il pallino nel riquadro.</small></div></div>
     <div class="keys"><kbd>W</kbd><kbd>S</kbd> (o <kbd>↑</kbd><kbd>↓</kbd>) acceleri e freni/retromarcia · <kbd>A</kbd><kbd>D</kbd> (o <kbd>←</kbd><kbd>→</kbd>) sterzi<br>
     <kbd>SPAZIO</kbd> freno a mano (derapata) · <kbd>Maiusc</kbd> turbo · <kbd>C</kbd> telecamera<br><kbd>R</kbd> riparti · <kbd>T</kbd> ora del giorno · <kbd>M</kbd> audio · <kbd>P</kbd> pausa<br>
     <b>Colpisci le auto di fianco e a gran velocità: fanno più danni. Raccogli le 🔧 verdi per ripararti!</b><br><small>Su telefono: joystick a sinistra (su/giù = gas/freno), TURBO e FRENO a destra.</small></div>
     <button class="big" id="bGo">Via!</button><br><a class="back" href="index.html">← Torna ai giochi</a>`);
   panel.querySelectorAll('#mO button').forEach(b => { b.onclick = () => { demol = b.dataset.m === '1'; panel.querySelectorAll('#mO button').forEach(x => x.classList.toggle('sel', x === b)); }; });
   panel.querySelectorAll('#tO button').forEach(b => { b.onclick = () => { applyTime(+b.dataset.i); panel.querySelectorAll('#tO button').forEach(x => x.classList.toggle('sel', x === b)); }; });
+  { const cv = document.getElementById('wbc'); let dn = false; cv.onpointerdown = e => { dn = true; cv.setPointerCapture(e.pointerId); wbSimMove(e, cv); }; cv.onpointermove = e => { if (dn) wbSimMove(e, cv); }; cv.onpointerup = () => { dn = false; WB.sim = null; WB.cx = WB.cy = 0; WB.st = WB.dev ? 'idle' : 'idle'; WB.steer = WB.thr = 0; };
+    document.getElementById('bWb').onclick = wbConnect; document.getElementById('bWz').onclick = wbZero; const ks = document.getElementById('wbK'), ki = document.getElementById('wbI'); ks.value = String(WB.sens); ki.checked = WB.inv; ks.onchange = () => { WB.sens = +ks.value; }; ki.onchange = () => { WB.inv = ki.checked; }; }
   document.getElementById('bGo').onclick = () => { resetGame(); camInit = false; mode = 'play'; overlay.classList.add('hidden'); initAudio(); toast(demol ? '🏢 Demolizione: abbatti tutto!' : '🚗 Sfascia le altre auto!', 2.8); };
 }
 function togglePause() { paused = !paused; if (paused) { showPanel('<h1>⏸ Pausa</h1><p>Premi P o SPAZIO per riprendere.</p><button class="big" id="bR">Riprendi</button><br><a class="back" href="index.html">← Torna ai giochi</a>'); document.getElementById('bR').onclick = togglePause; } else overlay.classList.add('hidden'); }
@@ -791,6 +848,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyP' || e.code === 'Escape') { if (!e.repeat && mode === 'play') togglePause(); return; }
   if (e.code === 'KeyC' && !e.repeat) { camMode = (camMode + 1) % 4; return; }
   if (e.code === 'KeyR' && !e.repeat) { if (mode === 'play' && me) { if (me.alive) { me.hp = 0; destroyCar(me); deadT = 0.6; } else deadT = 0; } return; }
+  if (e.code === 'KeyB' && !e.repeat) { wbZero(); return; }
   if (e.code === 'KeyT' && !e.repeat) { applyTime((timeIdx + 1) % 3); toast(TIMES[timeIdx].ic + ' ' + TIMES[timeIdx].n); return; }
   if (e.code === 'KeyM' && !e.repeat) { muted = !muted; toast(muted ? '🔇 Audio disattivato' : '🔊 Audio attivo'); return; }
   if (e.code === 'Space') { e.preventDefault(); if (paused) { if (!e.repeat) togglePause(); return; } keys.Space = true; return; }
@@ -816,7 +874,7 @@ setTimeout(() => {
   try { if (/demol/i.test(location.search)) demol = true; } catch (e) {}
   me = { x: 0, z: 0, h: 0, vx: 0, vz: 0, alive: true, hp: 1, hpMax: 1, turbo: 1 };
   showMenu();
-  window.__d = { cars, get me() { return me; }, resetGame, stepCar, moveCar, updateGame, blast, set demol(v) { demol = v; }, get demol() { return demol; }, get score() { return score; }, G: () => ({ score, kills, combo }), keys, pickups, interPts, isWater, hitBuilding, stats: () => ({ totalVol, destVol }) };
+  window.__d = { WB, wbReport, wbUpdate, wbMap, cars, get me() { return me; }, resetGame, stepCar, moveCar, updateGame, blast, set demol(v) { demol = v; }, get demol() { return demol; }, get score() { return score; }, G: () => ({ score, kills, combo }), keys, pickups, interPts, isWater, hitBuilding, stats: () => ({ totalVol, destVol }) };
 }, 60);
 requestAnimationFrame(loop);
 })();
