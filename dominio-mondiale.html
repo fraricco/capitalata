@@ -101,6 +101,20 @@ const UT = {
 const MX = { inf: { inf: 1, tank: .5, art: 1.3, heli: .7, air: .3 }, tank: { inf: 1.5, tank: 1, art: 1.6, heli: .3, air: .1 }, art: { inf: 1.3, tank: 1, art: .8, heli: .5, air: .2 }, heli: { inf: 1.2, tank: 1.7, art: 1.3, heli: 1, air: .5 }, air: { inf: 1.4, tank: 1.5, art: 1.5, heli: 1.5, air: 1.2 } };
 const GMX = { inf: 1, tank: 1.2, art: 1.5, heli: 1.1, air: 1.3 };   // efficacia contro le guarnigioni (considerate fanteria)
 const TIPI = Object.keys(UT);
+const emptyU = () => ({ inf: 0, tank: 0, art: 0, heli: 0, air: 0 });
+const frac = (a, t) => a.u[t] / (a.n || 1);
+const aSpd = a => 1 / (TIPI.reduce((s, t) => s + frac(a, t) / UT[t].spd, 0) || 1);        // l'armata va alla velocità dei reparti più lenti
+const aAttr = a => TIPI.reduce((s, t) => s + frac(a, t) * UT[t].attr, 0);
+const aOcc = a => TIPI.reduce((s, t) => s + a.u[t] * UT[t].occ, 0);
+const aRet = a => TIPI.reduce((s, t) => s + frac(a, t) * MX.inf[t] * UT[t].ret, 0);        // quanto subisce dal fuoco della guarnigione
+const aGmx = a => TIPI.reduce((s, t) => s + a.u[t] * GMX[t], 0);
+const aUp = a => TIPI.reduce((s, t) => s + a.u[t] * UT[t].up, 0), aPw = a => TIPI.reduce((s, t) => s + a.u[t] * UT[t].pw, 0);
+const rngMax = a => Math.max(...TIPI.filter(t => a.u[t] > a.n * 0.04).map(t => UT[t].rng), 9);
+function atk(a, b, d) { let f = 0; for (const t of TIPI) { if (a.u[t] <= 0 || d > UT[t].rng) continue; let m = 0; for (const s of TIPI) m += frac(b, s) * MX[t][s]; f += a.u[t] * m; } return f; }   // forza d'urto di a su b a distanza d
+function perdite(a, x) { x = Math.min(x, a.n); if (x <= 0) return; const k = (a.n - x) / a.n; for (const t of TIPI) a.u[t] *= k; a.n -= x; }
+function unisci(b, a) { for (const t of TIPI) b.u[t] += a.u[t]; b.n += a.n; }
+const dominante = a => TIPI.reduce((m, t) => a.u[t] > a.u[m] ? t : m, 'inf');
+const compStr = a => TIPI.filter(t => a.u[t] > 0).map(t => UT[t].ic + ' ' + nk(a.u[t])).join(' · ');
 const MODI = {
   continenti: { nome: 'Due continenti', ic: '🌍', d: 'Domina due continenti (almeno il 75% dei loro paesi). Senza limite di tempo.' },
   mondo: { nome: 'Dominio mondiale', ic: '👑', d: 'Conquista il 60% di tutti i paesi del mondo.' },
@@ -159,10 +173,10 @@ const troopsOf = fid => armiesOf(fid).reduce((t, a) => t + a.n, 0);
 const queueOf = fid => F(fid).queue.reduce((t, q) => t + q.n, 0);
 function income(fid) { return ownedBy(fid).reduce((t, c) => t + c.gdp * BUDGET * (1 - 0.55 * c.unrest), 0) * DIFFS[G.diff].eco * (fid === G.me ? 1 : 1); }
 function overext(fid) { const n = ownedBy(fid).length; return 1 + 0.02 * Math.max(0, n - 12) + 0.04 * Math.max(0, n - 30); }
-function upkeep(fid) { return (armiesOf(fid).reduce((t, a) => t + a.n * UT[a.t].up, 0) + F(fid).queue.reduce((t, q) => t + q.n * UT[q.t || 'inf'].up * 0.5, 0)) / 1000 * UPKEEP_K * overext(fid); }
+function upkeep(fid) { return (armiesOf(fid).reduce((t, a) => t + aUp(a), 0) + F(fid).queue.reduce((t, q) => t + q.n * UT[q.t || 'inf'].up * 0.5, 0)) / 1000 * UPKEEP_K * overext(fid); }
 function manpower(fid) { return ownedBy(fid).reduce((t, c) => t + c.man, 0); }
 function gdpOf(fid) { return ownedBy(fid).reduce((t, c) => t + c.gdp, 0); }
-function strength(fid) { return armiesOf(fid).reduce((t, a) => t + a.n * UT[a.t].pw, 0) + F(fid).queue.reduce((t, q) => t + q.n * UT[q.t || 'inf'].pw * 0.5, 0) + ownedBy(fid).reduce((t, c) => t + c.garr * 0.6, 0); }
+function strength(fid) { return armiesOf(fid).reduce((t, a) => t + aPw(a), 0) + F(fid).queue.reduce((t, q) => t + q.n * UT[q.t || 'inf'].pw * 0.5, 0) + ownedBy(fid).reduce((t, c) => t + c.garr * 0.6, 0); }
 const worldGdp = () => IDS.reduce((t, id) => t + G.C[id].gdp, 0);
 function fName(fid) { const f = F(fid), n = ownedBy(fid).length; return n > 4 ? 'Impero ' + C(f.cap).n : C(f.cap) ? C(f.cap).n : f.name; }
 const maxGarr = c => (6000 * Math.sqrt(c.pop) + c.gdp * 8) * 0.55 * DIFFS[G.diff].garr;
@@ -223,19 +237,19 @@ function startGame(pid, diff, modo) {
   // armate iniziali: i paesi piu' ricchi partono con un esercito mobile
   [...M.c].sort((a, b) => b.gdp - a.gdp).slice(0, 70).forEach(c => { const rc = C(c.id); creaArmata(c.id, Math.max(MIN_ARM * 2, rc.garr * 0.9), rc.lx, rc.ly); });
   if (!armiesOf(pid).length) { const rc = C(pid); creaArmata(pid, Math.max(MIN_ARM * 3, rc.garr * 0.9), rc.lx, rc.ly); }
-  // eserciti misti: il giocatore e i 25 paesi piu' ricchi partono con carri armati, artiglieria, elicotteri e aerei
+  // l'armata e' una sola per paese: il giocatore e i 25 paesi piu' ricchi partono con un esercito misto (fanteria, carri, razzi, elicotteri, aerei)
   const ricchi = [...M.c].sort((a, b) => b.gdp - a.gdp).slice(0, 25).map(c => c.id); if (!ricchi.includes(pid)) ricchi.push(pid);
-  for (const id of ricchi) { const a = armiesOf(id).find(q => q.t === 'inf'); if (!a) continue; const tot = a.n, rc = C(id); a.n = tot * 0.45; [['tank', 0.22], ['art', 0.12], ['heli', 0.1], ['air', 0.11]].forEach(([t, fr], i) => { if (tot * fr >= MIN_ARM) creaArmata(id, tot * fr / PWR(t), rc.lx + 2.2 * (i + 1), rc.ly + 1.5, t); }); }
+  for (const id of ricchi) { const a = armiesOf(id)[0]; if (!a) continue; const tot = a.n; a.u = emptyU(); a.u.inf = tot * 0.45; a.u.tank = tot * 0.22; a.u.art = tot * 0.12; a.u.heli = tot * 0.1; a.u.air = tot * 0.11; }
   log(`Comincia la partita: guidi ${C(pid).n}. Modalità: ${MODI[G.mode].nome}. ${MODI[G.mode].d}`, 'big');
   $('overlay').classList.add('hidden'); buildMap(); applyView(); paintMap(); panelDirty = true; logDirty = true;
 }
 
 /* ======================= ARMATE ======================= */
-const PWR = t => 1;   // le armate create nella partita iniziale usano la stessa forza equivalente
-function creaArmata(owner, n, x, y, t = 'inf') { const a = { id: G.seq++, owner, n, t, x, y, tx: x, ty: y, cid: countryAt(x, y), combatte: false, blocked: 0, ordine: null, path: [] }; G.arm.push(a); return a; }
-function aggiungiTruppe(owner, n, x, y, t = 'inf') { const a = G.arm.find(q => q.owner === owner && q.t === t && Math.hypot(q.x - x, q.y - y) < 4.5 && Math.hypot(q.tx - q.x, q.ty - q.y) < 1); if (a) { a.n += n; return a; } return creaArmata(owner, n, x, y, t); }
+function creaArmata(owner, n, x, y, t = 'inf') { const u = emptyU(); u[t] = n; const a = { id: G.seq++, owner, n, u, x, y, tx: x, ty: y, cid: countryAt(x, y), combatte: false, blocked: 0, ordine: null, path: [] }; G.arm.push(a); return a; }
+function aggiungiTruppe(owner, n, x, y, t = 'inf') { const a = G.arm.find(q => q.owner === owner && Math.hypot(q.x - x, q.y - y) < 4.5 && Math.hypot(q.tx - q.x, q.ty - q.y) < 1); if (a) { a.u[t] += n; a.n += n; return a; } return creaArmata(owner, n, x, y, t); }
 function eliminaArmata(a) { const i = G.arm.indexOf(a); if (i >= 0) G.arm.splice(i, 1); if (G.selA === a.id) G.selA = null; }
-function dividiArmata(a, frac) { const n = Math.floor(a.n * frac); if (n < MIN_ARM || a.n - n < MIN_ARM) return null; a.n -= n; const b = creaArmata(a.owner, n, a.x + 2.5, a.y + 2, a.t); b.cid = a.cid; return b; }
+function dividiArmata(a, fr) { const n = Math.floor(a.n * fr); if (n < MIN_ARM || a.n - n < MIN_ARM) return null; const b = creaArmata(a.owner, n, a.x + 2.5, a.y + 2); b.u = emptyU(); for (const t of TIPI) { const q = a.u[t] * fr; b.u[t] = q; a.u[t] -= q; } b.n = n; a.n -= n; b.cid = a.cid; return b; }
+function staccaTipo(a, t) { const q = a.u[t]; if (q < MIN_ARM || a.n - q < MIN_ARM) return null; const b = creaArmata(a.owner, q, a.x + 2.5, a.y + 2, t); a.u[t] = 0; a.n -= q; b.cid = a.cid; return b; }
 function ordina(a, x, y) { a.tx = clamp(x, 0, W); a.ty = clamp(y, 0, H); a.blocked = 0; a.path = []; }
 function ordinaPercorso(a, pts) { const q = pts.map(p => ({ x: clamp(p.x, 0, W), y: clamp(p.y, 0, H) })); if (!q.length) return; const f = q.shift(); a.tx = f.x; a.ty = f.y; a.path = q; a.blocked = 0; }
 // puo' l'armata entrare in questo paese?
@@ -249,7 +263,7 @@ function puoiEntrare(a, cid) {
 function tickArmate(dtM) {
   for (const a of G.arm) {
     let dx = a.tx - a.x, dy = a.ty - a.y, d = Math.hypot(dx, dy); if (d < 0.4) { if (a.path.length) { const q = a.path.shift(); a.tx = q.x; a.ty = q.y; } continue; }
-    let rem = Math.min(d, VEL_ARM * (a.owner === G.me ? 1 + 0.1 * G.res.lv.log : 1) * UT[a.t].spd * ((a.cid || a.t === 'air' || a.t === 'heli') ? 1 : 0.8) * (a.combatte ? 0.35 : 1) * dtM);
+    let rem = Math.min(d, VEL_ARM * (a.owner === G.me ? 1 + 0.1 * G.res.lv.log : 1) * aSpd(a) * (a.cid ? 1 : 0.8) * (a.combatte ? 0.35 : 1) * dtM);
     while (rem > 0.001) {
       dx = a.tx - a.x; dy = a.ty - a.y; d = Math.hypot(dx, dy); if (d < 0.2) { if (a.path.length) { const q = a.path.shift(); a.tx = q.x; a.ty = q.y; continue; } break; }
       const st = Math.min(rem, 1.1, d), nx = a.x + dx / d * st, ny = a.y + dy / d * st, c2 = countryAt(nx, ny);
@@ -260,7 +274,7 @@ function tickArmate(dtM) {
   // armate alleate ferme e vicine si fondono
   for (let i = G.arm.length - 1; i >= 0; i--) {
     const a = G.arm[i]; if (a.path.length || Math.hypot(a.tx - a.x, a.ty - a.y) > 1.2) continue;
-    for (let j = 0; j < i; j++) { const b = G.arm[j]; if (b.owner !== a.owner || b.t !== a.t || b.path.length || Math.hypot(b.tx - b.x, b.ty - b.y) > 1.2) continue; if (Math.hypot(a.x - b.x, a.y - b.y) < 3.6) { b.n += a.n; if (G.selA === a.id) G.selA = b.id; G.arm.splice(i, 1); break; } }
+    for (let j = 0; j < i; j++) { const b = G.arm[j]; if (b.owner !== a.owner || b.path.length || Math.hypot(b.tx - b.x, b.ty - b.y) > 1.2) continue; if (Math.hypot(a.x - b.x, a.y - b.y) < 3.6) { unisci(b, a); if (G.selA === a.id) G.selA = b.id; G.arm.splice(i, 1); break; } }
   }
 }
 // armate in transito: scaduto il permesso, devono andarsene
@@ -280,22 +294,22 @@ function tickScontri(dtM) {
   for (const a of G.arm) a.combatte = false;
   for (let i = 0; i < G.arm.length; i++) for (let j = i + 1; j < G.arm.length; j++) {
     const a = G.arm[i], b = G.arm[j]; if (a.owner === b.owner || !inGuerra(a.owner, b.owner)) continue; const d = Math.hypot(a.x - b.x, a.y - b.y); if (d > 34) continue;
-    const ra = UT[a.t].rng, rb = UT[b.t].rng; if (d > Math.max(ra, rb)) continue;   // ciascuno colpisce solo entro la propria gittata (razzi e aerei da lontano)
+    if (d > Math.max(rngMax(a), rngMax(b))) continue;   // ciascun reparto colpisce solo entro la propria gittata (razzi e aerei da lontano)
     const ca = a.cid ? C(a.cid) : null, cb = b.cid ? C(b.cid) : null, terr = ca || cb;
-    const ba = terr && terr.owner === a.owner ? 1.25 : 1, bb = terr && terr.owner === b.owner ? 1.25 : 1, fa = a.n * ba * techMul(a.owner) * MX[a.t][b.t] * (0.9 + 0.2 * rnd()), fb = b.n * bb * techMul(b.owner) * MX[b.t][a.t] * (0.9 + 0.2 * rnd());
-    if (d <= ra) { b.n -= Math.min(b.n, (fa * K_SCONTRO + 50) * dtM); b.combatte = true; } if (d <= rb) { a.n -= Math.min(a.n, (fb * K_SCONTRO + 50) * dtM); a.combatte = true; }
+    const ba = terr && terr.owner === a.owner ? 1.25 : 1, bb = terr && terr.owner === b.owner ? 1.25 : 1, fa = atk(a, b, d) * ba * techMul(a.owner) * (0.9 + 0.2 * rnd()), fb = atk(b, a, d) * bb * techMul(b.owner) * (0.9 + 0.2 * rnd());
+    if (fa > 0) { perdite(b, (fa * K_SCONTRO + 50) * dtM); b.combatte = true; } if (fb > 0) { perdite(a, (fb * K_SCONTRO + 50) * dtM); a.combatte = true; }
   }
   // armate contro guarnigioni e logoramento del territorio ostile
   for (const a of G.arm) {
-    if (!a.cid) continue; const c = C(a.cid); if (c.owner === a.owner || !inGuerra(a.owner, c.owner)) continue; const U = UT[a.t];
-    let att = ATTR * U.attr * (a.owner === G.me ? 1 - 0.25 * G.res.lv.log : 1); if (c.nb.some(n => C(n).owner === a.owner)) att *= 0.55;            // vicino ai rifornimenti si soffre meno
-    a.n -= Math.min(a.n, (a.n * att + 25) * dtM);                                           // logoramento: partigiani, fame, malattie
+    if (!a.cid) continue; const c = C(a.cid); if (c.owner === a.owner || !inGuerra(a.owner, c.owner)) continue;
+    let att = ATTR * aAttr(a) * (a.owner === G.me ? 1 - 0.25 * G.res.lv.log : 1); if (c.nb.some(n => C(n).owner === a.owner)) att *= 0.55;            // vicino ai rifornimenti si soffre meno
+    perdite(a, (a.n * att + 25) * dtM);                                           // logoramento: partigiani, fame, malattie
     if (c.garr > 5) {
-      a.combatte = true; const fa = a.n * techMul(a.owner) * GMX[a.t] * (0.9 + 0.2 * rnd()), fg = c.garr * 1.25 * MX.inf[a.t] * (0.9 + 0.2 * rnd());
-      a.n -= Math.min(a.n, (fg * K_SCONTRO * U.ret + 30) * dtM); c.garr -= Math.min(c.garr, (fa * K_SCONTRO + 30) * dtM);
+      a.combatte = true; const fa = aGmx(a) * techMul(a.owner) * (0.9 + 0.2 * rnd()), fg = c.garr * 1.25 * (0.9 + 0.2 * rnd());
+      perdite(a, (fg * aRet(a) * K_SCONTRO + 30) * dtM); c.garr -= Math.min(c.garr, (fa * K_SCONTRO + 30) * dtM);
     }
   }
-  for (let i = G.arm.length - 1; i >= 0; i--) { const a = G.arm[i]; if (a.n < MIN_ARM) { if (a.owner === G.me) log(`Un'armata nostra (${UT[a.t].nome.toLowerCase()}) è stata annientata${a.cid ? ' in ' + C(a.cid).n : ''}.`, 'bad'); else if (a.cid && C(a.cid).owner === G.me) log(`Abbiamo annientato un'armata di ${fName(a.owner)} in ${C(a.cid).n}.`, 'good'); eliminaArmata(a); } }
+  for (let i = G.arm.length - 1; i >= 0; i--) { const a = G.arm[i]; if (a.n < MIN_ARM) { if (a.owner === G.me) log(`La nostra armata è stata annientata${a.cid ? ' in ' + C(a.cid).n : ''}.`, 'bad'); else if (a.cid && C(a.cid).owner === G.me) log(`Abbiamo annientato un'armata di ${fName(a.owner)} in ${C(a.cid).n}.`, 'good'); eliminaArmata(a); } }
 }
 const SOGLIA_OCC = 0.55;   // quota del territorio da occupare per annettere il paese
 function liberaCelle(c) { for (const idx of c.occList) OCC[idx] = -1; c.occList = []; c.cnt = {}; c.fr = {}; c.occ = null; occDirty = true; }
@@ -320,12 +334,12 @@ function espandi(c, ci, fid, fr, budget) {   // l'occupazione si allarga in modo
 function tickOccupazione(dtM) {
   for (const id of IDS) {
     const c = C(id), ci = IDX[id], dentro = G.arm.filter(a => a.cid === id), dif = dentro.filter(a => a.owner === c.owner).reduce((t, a) => t + a.n, 0);
-    const invA = dentro.filter(a => a.owner !== c.owner && inGuerra(a.owner, c.owner)), att = invA.reduce((t, a) => t + a.n, 0), invO = invA.filter(a => UT[a.t].occ > 0);
+    const invA = dentro.filter(a => a.owner !== c.owner && inGuerra(a.owner, c.owner)), att = invA.reduce((t, a) => t + a.n, 0), invO = invA.filter(a => aOcc(a) > 0);
     if (invO.length && dif <= att * 1.5) {
       // invasione anche con difensori ancora in campo: parte dal confine e da dove si trova l'armata e avanza compatta
       const per = {}; invO.forEach(a => (per[a.owner] = per[a.owner] || []).push(a));
       for (const fid in per) {
-        const arms = per[fid].sort((x, y) => y.n - x.n), tot = arms.reduce((t, a) => t + a.n * UT[a.t].occ, 0) + invA.filter(a => a.owner === fid && UT[a.t].occ === 0).reduce((t, a) => t + a.n * 0.25, 0), fr = c.fr[fid] = c.fr[fid] || { q: [], h: 0, init: false };
+        const arms = per[fid].sort((x, y) => y.n - x.n), tot = arms.reduce((t, a) => t + aOcc(a), 0), fr = c.fr[fid] = c.fr[fid] || { q: [], h: 0, init: false };
         if (!fr.init) { fr.init = true; semiConfine(c, ci, fid, arms[0], fr); }
         for (const a of arms) { const ix = Math.floor(a.x), iy = Math.floor(a.y); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = ix + dx, y = iy + dy; if (x < 0 || y < 0 || x >= GRW || y >= GRH) continue; const idx = y * GRW + x; if (GRID[idx] === ci && OCC[idx] < 0) occupaCella(c, fid, idx, fr); } }
         const share = tot / (tot + (dif + c.garr) * 1.1 + 1), rate = 130 * Math.min(1.6, tot / resist(c)) * clamp(share * 1.8, 0.1, 1.2), k = rate * dtM, m = Math.floor(k) + (rnd() < k % 1 ? 1 : 0);
@@ -367,7 +381,7 @@ function tickEconomia(dtM) {
   const Rs = G.res; if (Rs.cur && G.fase === 'play') { const T = TECH[Rs.cur], l = Rs.lv[Rs.cur]; Rs.p[Rs.cur] += rpMese(G.me) * dtM; if (Rs.p[Rs.cur] >= T.cost[l]) { Rs.lv[Rs.cur]++; Rs.p[Rs.cur] = 0; log(`🔬 Ricerca completata: ${T.n} livello ${l + 1}.`, 'good'); avvisa(`🔬 ${T.n} livello ${l + 1}!`); Rs.cur = Rs.lv[Rs.cur] < 3 ? Rs.cur : null; panelDirty = true; } }
   for (const id of IDS) {
     const f = F(id); if (!f.alive) continue; f.money += (income(id) - upkeep(id)) * dtM;
-    if (f.money < 0) { const dis = Math.min(troopsOf(id) * 0.04 * dtM, -f.money / (UPKEEP_K / 1000) * 0.1); if (dis > 0) { const a = armiesOf(id).sort((x, y) => y.n - x.n)[0]; if (a) { a.n -= Math.min(a.n - 1, dis); if (a.n < MIN_ARM) eliminaArmata(a); if (id === G.me && rnd() < 0.05) log('Fondi esauriti: i soldati disertano!', 'bad'); } } f.money = Math.max(f.money, -income(id) * 6); }
+    if (f.money < 0) { const dis = Math.min(troopsOf(id) * 0.04 * dtM, -f.money / (UPKEEP_K / 1000) * 0.1); if (dis > 0) { const a = armiesOf(id).sort((x, y) => y.n - x.n)[0]; if (a) { perdite(a, Math.min(a.n - 1, dis)); if (a.n < MIN_ARM) eliminaArmata(a); if (id === G.me && rnd() < 0.05) log('Fondi esauriti: i soldati disertano!', 'bad'); } } f.money = Math.max(f.money, -income(id) * 6); }
     for (const q of f.queue) q.left -= dtM; const pronti = f.queue.filter(q => q.left <= 0); if (pronti.length) { f.queue = f.queue.filter(q => q.left > 0); for (const q of pronti) { const c = C(q.cid).owner === id ? C(q.cid) : C(f.cap); aggiungiTruppe(id, q.n, c.lx, c.ly, q.t || 'inf'); } }
   }
   for (const id of IDS) {
@@ -503,7 +517,7 @@ function renderArmate() {
     const r = raggioPx(a) * ku, sel = a.id === G.selA, col = F(a.owner).color;
     g.ci.setAttribute('cx', a.x); g.ci.setAttribute('cy', a.y); g.ci.setAttribute('r', r); g.ci.setAttribute('fill', col); g.ci.setAttribute('stroke', sel ? '#fff' : a.owner === G.me ? '#ffe08a' : '#06121e'); g.ci.setAttribute('stroke-width', (sel ? 2.4 : 1.2) * ku);
     g.ci.setAttribute('opacity', a.combatte ? 0.6 + 0.4 * Math.abs(Math.sin(performance.now() / 160)) : 1);
-    g.tx.setAttribute('x', a.x); g.tx.setAttribute('y', a.y + r * 0.38); g.tx.setAttribute('font-size', clamp(r * 0.62, 1.6, 6)); g.tx.setAttribute('stroke-width', r * 0.14); g.tx.textContent = nk(a.n); g.ic.setAttribute('x', a.x); g.ic.setAttribute('y', a.y - r * 0.3); g.ic.setAttribute('font-size', clamp(r * 0.85, 2, 8)); g.ic.setAttribute('stroke-width', 0); g.ic.textContent = UT[a.t].ic;
+    g.tx.setAttribute('x', a.x); g.tx.setAttribute('y', a.y + r * 0.38); g.tx.setAttribute('font-size', clamp(r * 0.62, 1.6, 6)); g.tx.setAttribute('stroke-width', r * 0.14); g.tx.textContent = nk(a.n); g.ic.setAttribute('x', a.x); g.ic.setAttribute('y', a.y - r * 0.3); g.ic.setAttribute('font-size', clamp(r * 0.85, 2, 8)); g.ic.setAttribute('stroke-width', 0); g.ic.textContent = TIPI.filter(t => a.u[t] > a.n * 0.04).length > 1 ? '⚔️' : UT[dominante(a)].ic;
     const mov = (Math.hypot(a.tx - a.x, a.ty - a.y) > 1 || a.path.length) && (a.owner === G.me); g.ln.style.display = mov ? '' : 'none'; if (mov) { g.ln.setAttribute('points', [a.x + ',' + a.y, a.tx + ',' + a.ty, ...a.path.map(q => q.x + ',' + q.y)].join(' ')); g.ln.setAttribute('stroke-width', 1.2 * ku); g.ln.setAttribute('stroke-dasharray', `${4 * ku} ${3 * ku}`); }
   }
   for (const [id, g] of armEls) if (!seen.has(id)) { g.c.remove(); g.ln.remove(); armEls.delete(id); }
@@ -522,16 +536,28 @@ function renderStats() {
 }
 function statoRel(a, b) { if (a === b) return '<span class="tag me">Nostro</span>'; return inGuerra(a, b) ? '<span class="tag war">In guerra</span>' : '<span class="tag peace">In pace</span>'; }
 function recLoc() { const me = G.me; return G.selC && C(G.selC).owner === me ? G.selC : F(me).cap; }
-const TITOLI = { esercito: '🪖 Esercito', ricerca: '🔬 Ricerca', obiettivo: '🎯 Obiettivo', paese: '🌐 Paese' };
+const TITOLI = { armata: '⚔️ Armata', esercito: '🪖 Esercito', ricerca: '🔬 Ricerca', obiettivo: '🎯 Obiettivo', paese: '🌐 Paese' };
 function renderPanel() {
   const side = $('side'); if (G.fase === 'setup' || !G.ui) { side.classList.remove('open'); $('panel').innerHTML = ''; renderBar(); return; }
   const me = G.me, f = F(me); let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>${TITOLI[G.ui]}</b><button class="small ghost" data-act="close">✕</button></div>`;
   const mode = G.ui;
+  if (mode === 'armata') {
+    const a = G.arm.find(x => x.id === G.selA);
+    if (!a) h += '<p class="hint">Clicca un\'armata sulla mappa per vedere cosa contiene.</p>';
+    else {
+      const c = a.cid ? C(a.cid) : null, mio = a.owner === me, multi = TIPI.filter(t => a.u[t] > 0).length > 1;
+      h += `<div class="card"><h3><span class="dot" style="background:${F(a.owner).color}"></span>Armata ${mio ? 'nostra' : 'di ' + fName(a.owner)}</h3><div class="row"><span>Forza totale</span><b>${nf(a.n)}</b></div><div class="row"><span>Si trova in</span><b>${c ? c.n : 'mare aperto'}</b></div><div class="row"><span>Velocità</span><b>${Math.round(aSpd(a) * 100)}%</b></div><h4>Cosa c'è dentro</h4>`;
+      for (const t of TIPI) { if (a.u[t] <= 0) continue; const U = UT[t], q = a.u[t] / a.n; h += `<div class="row"><span>${U.ic} ${U.nome}</span><b>${nf(a.u[t] / U.eq)} ${U.unit}</b></div><div class="bar"><i style="width:${q * 100}%"></i></div>${mio && multi ? `<div class="btns" style="margin:-2px 0 6px"><button class="small ghost" data-act="stacca" data-t="${t}">Stacca in una nuova armata</button></div>` : ''}`; }
+      if (c && c.owner !== a.owner) { const w = inGuerra(a.owner, c.owner); h += `<div class="row"><span>Territorio</span><span>${w ? '<span class="tag war">ostile: logoramento</span>' : '<span class="tag">straniero</span>'}</span></div>`; }
+      if (mio) h += `<p class="hint" style="margin-top:6px">Trascina l'armata per tracciare un percorso, oppure clicca la destinazione. Va alla velocità dei reparti più lenti.</p><div class="btns"><button class="small ghost" data-act="stop">Fermati</button><button class="small ghost" data-act="split" data-v="0.5">Dividi 50%</button><button class="small ghost" data-act="split" data-v="0.25">Dividi 25%</button></div>`;
+      h += '</div>';
+    }
+  }
   if (mode === 'paese') {
   const a = G.arm.find(x => x.id === G.selA);
   if (a) {
     const c = a.cid ? C(a.cid) : null, mio = a.owner === me;
-    h += `<div class="card"><h3><span class="dot" style="background:${F(a.owner).color}"></span>Armata ${mio ? 'nostra' : 'di ' + fName(a.owner)}</h3><div class="row"><span>${UT[a.t].ic} ${UT[a.t].nome}</span><b>${nf(a.n / UT[a.t].eq)} ${UT[a.t].unit}</b></div><div class="row"><span>Forza</span><b>${nf(a.n)}</b></div><div class="row"><span>Si trova in</span><b>${c ? c.n : 'mare aperto'}</b></div>`;
+    h += `<div class="card"><h3><span class="dot" style="background:${F(a.owner).color}"></span>Armata ${mio ? 'nostra' : 'di ' + fName(a.owner)}</h3><div class="row"><span>Composizione</span><b style="font-size:.78rem">${compStr(a)}</b></div><div class="row"><span>Forza</span><b>${nf(a.n)}</b></div><div class="row"><span>Si trova in</span><b>${c ? c.n : 'mare aperto'}</b></div>`;
     if (c && c.owner !== a.owner) { const w = inGuerra(a.owner, c.owner); h += `<div class="row"><span>Territorio</span><span>${w ? '<span class="tag war">ostile: logoramento</span>' : (F(a.owner).tr[c.owner] && F(a.owner).tr[c.owner].until > G.t ? '<span class="tag peace">in transito</span>' : '<span class="tag war">senza permesso</span>')}</span></div>`; }
     if (false) h += `<p class="hint" style="margin-top:6px">Trascina l'armata col mouse per tracciare un percorso, anche curvo; oppure selezionala e clicca la destinazione. Con «Fermati» si arresta: se è in territorio nemico comincia a invadere. Se attraversa paesi in pace potrebbero negarle il transito; nei paesi in guerra con noi si logora.</p><div class="btns"><button class="small ghost" data-act="split" data-v="0.5">Dividi 50%</button><button class="small ghost" data-act="split" data-v="0.25">Dividi 25%</button><button class="small ghost" data-act="stop">Fermati</button><button class="small ghost" data-act="desel">Chiudi</button></div>`; else h += `<div class="btns"><button class="small ghost" data-act="desel">Chiudi</button></div>`;
     h += '</div>';
@@ -555,7 +581,7 @@ function renderPanel() {
   }
   if (mode === 'esercito') {
   const loc = recLoc(), lc = C(loc); h += `<div class="card"><h3>🪖 Reclutamento</h3><div class="row"><span>Esercito</span><b>forza ${nf(troopsOf(me))} · ${armiesOf(me).length} armate</b></div><div class="row"><span>In addestramento</span><b>${nf(queueOf(me))}</b></div><div class="row"><span>Richiamabili</span><b>${nk(manpower(me))}</b></div><div class="row"><span>Mantenimento</span><b>${money(upkeep(me))}/mese</b></div><h4>Che cosa arruoli a ${lc.n}</h4><div class="btns">${TIPI.map(t => `<button class="small ${G.recT === t ? '' : 'ghost'}" data-act="rtype" data-t="${t}">${UT[t].ic} ${UT[t].nome}</button>`).join('')}</div><p class="hint" style="margin:6px 0 4px">${UT[G.recT].d}<br>1 reparto (forza 1k) = ${nf(1000 / UT[G.recT].eq)} ${UT[G.recT].unit} · richiamabili ${nf(UT[G.recT].man)} · addestramento ${UT[G.recT].add} mesi</p><div class="btns">${[1, 5, 20, 50].map(k => `<button class="small" data-act="rec" data-v="${k}" ${maxArruolabili(me, G.recT) < k ? 'disabled' : ''}>+${k}k · ${money(k * costK(me) * UT[G.recT].cost)}</button>`).join('')}<button class="small ghost" data-act="rec" data-v="${maxArruolabili(me, G.recT)}" ${maxArruolabili(me, G.recT) < 1 ? 'disabled' : ''}>Massimo (${nf(maxArruolabili(me, G.recT) * 1000 / UT[G.recT].eq)} ${UT[G.recT].unit})</button></div><p class="hint" style="margin-top:6px">Le reclute compaiono nel paese scelto dopo l'addestramento. Per cambiare luogo, clicca un altro tuo paese sulla mappa e riapri questo riquadro.</p></div>`;
-  h += `<div class="card"><h3>Le tue armate</h3>${armiesOf(me).sort((x, y) => y.n - x.n).slice(0, 30).map(x => `<div class="row"><span>${x.cid ? C(x.cid).n : 'in mare'} <small style="opacity:.6">${nk(x.n)}</small></span><button class="small ghost" data-act="selarm" data-v="${x.id}">${UT[x.t].ic} ${nf(x.n / UT[x.t].eq)} ${UT[x.t].unit}</button></div>`).join('') || '<p class="hint">Nessuna armata.</p>'}</div>`;
+  h += `<div class="card"><h3>Le tue armate</h3>${armiesOf(me).sort((x, y) => y.n - x.n).slice(0, 30).map(x => `<div class="row"><span>${x.cid ? C(x.cid).n : 'in mare'}</span><button class="small ghost" data-act="selarm" data-v="${x.id}">⚔️ ${nk(x.n)}</button></div>`).join('') || '<p class="hint">Nessuna armata.</p>'}</div>`;
   const guerre = Object.keys(f.war); h += `<div class="card"><h3>⚔️ Guerre in corso</h3>${guerre.length ? guerre.map(e => `<div class="row"><span>${fName(e)}</span><b>${Math.round(G.t - f.war[e])} mesi · ${nk(troopsOf(e))} sold.</b></div>`).join('') : '<p class="hint">Siamo in pace con tutti.</p>'}${G.offers.map(o => `<div class="row"><span>🕊️ ${fName(o.da)} chiede la pace</span><button class="small good" data-act="acceptoff" data-v="${o.da}">Accetta</button></div>`).join('')}</div>`;
   }
   if (mode === 'ricerca') {
@@ -571,7 +597,7 @@ function renderBar() {
   const bar = $('abar'), a = G.arm.find(x => x.id === G.selA);
   if (G.fase !== 'play' || !a || a.owner !== G.me) { bar.style.display = 'none'; return; }
   const c = a.cid ? C(a.cid) : null; bar.style.display = 'flex';
-  bar.innerHTML = `<span style="font-size:.8rem">${UT[a.t].ic} <b>${nf(a.n / UT[a.t].eq)}</b> ${UT[a.t].unit} · ${c ? c.n : 'in mare'}</span><button class="small ghost" data-act="stop">Fermati</button><button class="small ghost" data-act="split" data-v="0.5">Dividi 50%</button><button class="small ghost" data-act="split" data-v="0.25">25%</button><button class="small ghost" data-act="desel">✕</button>`;
+  bar.innerHTML = `<span style="font-size:.8rem">⚔️ <b>${nk(a.n)}</b> · ${compStr(a)} · ${c ? c.n : 'in mare'}</span><button class="small ghost" data-act="stop">Fermati</button><button class="small ghost" data-act="split" data-v="0.5">Dividi 50%</button><button class="small ghost" data-act="split" data-v="0.25">25%</button><button class="small ghost" data-act="desel">✕</button>`;
 }
 function onAct(e) {
   const b = e.target.closest('[data-act]'); if (!b || G.fase !== 'play') return; const act = b.dataset.act, v = +b.dataset.v, me = G.me;
@@ -580,7 +606,7 @@ function onAct(e) {
   else if (act === 'trans') { const o = C(G.selC).owner, costo = +b.dataset.v; if (F(me).money >= costo) { F(me).money -= costo; chiediTransito(me, o, true); } }
   else if (act === 'split') { const a = G.arm.find(x => x.id === G.selA); if (a) { const n = dividiArmata(a, v); if (n) G.selA = n.id; else avvisa('Armata troppo piccola per dividerla'); } }
   else if (act === 'stop') { const a = G.arm.find(x => x.id === G.selA); if (a) { a.tx = a.x; a.ty = a.y; a.path = []; } } else if (act === 'ric') { const k = b.dataset.k; if (G.res.lv[k] < 3) G.res.cur = k; }
-  else if (act === 'rtype') { G.recT = b.dataset.t; } else if (act === 'desel') { G.selA = null; SVG.classList.remove('armata'); } else if (act === 'close') { G.ui = null; } else if (act === 'askwar') { if (G.ask) dichiaraGuerra(me, C(G.ask).owner); nascondiAsk(); } else if (act === 'askno') { nascondiAsk(); } else if (act === 'openrec') { G.ui = 'esercito'; } else if (act === 'selarm') { const q = G.arm.find(x => x.id === v); if (q) { G.selA = q.id; if (q.cid) G.selC = q.cid; paintMap(); } }
+  else if (act === 'stacca') { const a = G.arm.find(x => x.id === G.selA); if (a) { const n = staccaTipo(a, b.dataset.t); if (n) { G.selA = n.id; avvisa('Reparto staccato in una nuova armata'); } else avvisa('Non si può staccare: resterebbe troppo poco'); } } else if (act === 'rtype') { G.recT = b.dataset.t; } else if (act === 'desel') { G.selA = null; SVG.classList.remove('armata'); } else if (act === 'close') { G.ui = null; } else if (act === 'askwar') { if (G.ask) dichiaraGuerra(me, C(G.ask).owner); nascondiAsk(); } else if (act === 'askno') { nascondiAsk(); } else if (act === 'openrec') { G.ui = 'esercito'; } else if (act === 'selarm') { const q = G.arm.find(x => x.id === v); if (q) { G.selA = q.id; if (q.cid) G.selC = q.cid; G.ui = 'armata'; paintMap(); } }
   panelDirty = true;
 }
 $('panel').onclick = onAct; $('ask').onclick = onAct; $('abar').onclick = onAct;
@@ -612,7 +638,7 @@ function clickMappa(cx, cy, destro) {
   const p = puntoMappa(cx, cy), ku = 1 / (scaleBase * view.k); let hit = null, bd = 1e9;
   for (const a of G.arm) { const d = Math.hypot(a.x - p.x, a.y - p.y); if (d < raggioPx(a) * ku * 1.25 && d < bd) { bd = d; hit = a; } }
   const sel = G.arm.find(a => a.id === G.selA);
-  if (hit && !destro && (!sel || hit.id !== sel.id || true)) { G.selA = hit.id; if (hit.cid) G.selC = hit.cid; if (hit.owner !== G.me) G.ui = 'paese'; SVG.classList.toggle('armata', hit.owner === G.me); selez(); return; }
+  if (hit && !destro && (!sel || hit.id !== sel.id || true)) { G.selA = hit.id; if (hit.cid) G.selC = hit.cid; G.ui = 'armata'; SVG.classList.toggle('armata', hit.owner === G.me); selez(); return; }
   if (sel && sel.owner === G.me) { const id = countryAt(p.x, p.y); if (id) { G.selC = id; const o = C(id).owner; if (o !== G.me && !inGuerra(G.me, o)) { chiediGuerra(id); selez(); return; } selez(); } ordina(sel, p.x, p.y); panelDirty = true; return; }
   const id = countryAt(p.x, p.y); if (id) { G.selC = id; G.selA = null; G.ui = 'paese'; SVG.classList.remove('armata'); selez(); } else if (G.ui === 'paese') { G.ui = null; G.selA = null; selez(); }
 }
@@ -641,7 +667,7 @@ function loop(now) {
   if (occDirty && now - (loop.lo || 0) > 250) { loop.lo = now; drawOcc(); }
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (G.fase === 'play' && G.vel > 0) { const dtM = dt * 1000 / MS_MESE * VELS[G.vel], n = Math.max(1, Math.ceil(dtM / 0.05)); for (let i = 0; i < n; i++) tick(dtM / n); }
-  if (G.fase === 'play' || G.fase === 'fine') { renderArmate(); uiT -= dt; if (uiT <= 0 || panelDirty || logDirty) { uiT = 0.3; renderStats(); if (panelDirty) { renderPanel(); panelDirty = false; } if (logDirty) { renderLog(); logDirty = false; } } }
+  if (G.fase === 'play' || G.fase === 'fine') { renderArmate(); uiT -= dt; if (uiT <= 0 || panelDirty || logDirty) { uiT = 0.3; renderStats(); if (G.ui === 'armata' && (loop.pa = (loop.pa || 0) + 1) % 5 === 0) panelDirty = true; if (panelDirty) { renderPanel(); panelDirty = false; } if (logDirty) { renderLog(); logDirty = false; } } }
   requestAnimationFrame(loop);
 }
 buildMapOnce();
